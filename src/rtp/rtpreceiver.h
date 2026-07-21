@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <atomic>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -94,5 +95,10 @@ namespace pan::rtp
             std::atomic<uint64_t> m_nDuplicates{0};
             std::atomic<uint64_t> m_nMergedFromSecondary{0};
             audio::Meters m_meters;
+
+            //buffer level envelope for the ui chart: one sample per 100 ms
+            //bucket with the min/max/last ms of audio buffered ahead of playout
+            struct BufferSample { float fMin; float fMax; float fLast; };
+            std::deque<BufferSample> m_qBufferHistory;      //guarded by m_mutex
     };
 }

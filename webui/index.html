@@ -66,6 +66,10 @@
             <table class="kv" id="rx-stats"></table>
         </div>
         <div class="card wide">
+            <h2>Buffer <span class="sub">(ms of audio buffered ahead of playout · band = min/max per 100 ms)</span></h2>
+            <canvas id="rx-buffer-chart" height="120"></canvas>
+        </div>
+        <div class="card wide">
             <h2>Manual connect</h2>
             <textarea id="rx-sdp" placeholder="Paste SDP here (a=group:DUP supported)…" rows="5"></textarea>
             <div class="row">

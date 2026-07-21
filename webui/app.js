@@ -113,6 +113,8 @@ function render() {
         $("rx-gain-val").textContent = rx.gain_db + " dB";
     }
 
+    drawBufferChart(rx.buffer_history || [], rx.playout_delay_ms || 20, rx.running && rx.receiving);
+
     $("rx-stats").innerHTML =
         `<tr><td>Played</td><td>${rx.played || 0}</td></tr>
          <tr><td>Concealed (loss)</td><td>${rx.concealed || 0}</td></tr>
@@ -163,6 +165,54 @@ function render() {
          <td>${m.announces}</td><td class="sub">${m.bmca}</td></tr>`).join("")
         || `<tr><td colspan="11" class="sub">no announce messages on domain ${ptp.domain}</td></tr>`;
     drawChart(ptp.offset_history || []);
+}
+
+/* ---------- receiver buffer chart ---------- */
+function drawBufferChart(history, targetMs, live) {
+    const canvas = $("rx-buffer-chart");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width = canvas.clientWidth;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = "11px sans-serif";
+    if (history.length < 2) {
+        ctx.fillStyle = "#8b93a7";
+        ctx.fillText(live ? "collecting…" : "no active reception", 6, 14);
+        return;
+    }
+
+    const top = Math.max(targetMs * 2, ...history.map(s => s[1])) * 1.1;
+    const y = ms => h - 4 - (ms / top) * (h - 20);
+    const x = i => i / (history.length - 1) * w;
+
+    /* min/max band: network jitter shows as band width and dips */
+    ctx.beginPath();
+    history.forEach((s, i) => { i ? ctx.lineTo(x(i), y(s[1])) : ctx.moveTo(x(i), y(s[1])); });
+    for (let i = history.length - 1; i >= 0; i--) ctx.lineTo(x(i), y(history[i][0]));
+    ctx.closePath();
+    ctx.fillStyle = "rgba(77,163,255,.22)";
+    ctx.fill();
+
+    /* last-value line */
+    ctx.strokeStyle = "#4da3ff";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    history.forEach((s, i) => { i ? ctx.lineTo(x(i), y(s[2])) : ctx.moveTo(x(i), y(s[2])); });
+    ctx.stroke();
+
+    /* playout delay target */
+    ctx.strokeStyle = "#f1c40f";
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(0, y(targetMs)); ctx.lineTo(w, y(targetMs)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    const last = history[history.length - 1];
+    ctx.fillStyle = "#f1c40f";
+    ctx.fillText("target " + targetMs + " ms", 6, y(targetMs) - 5);
+    ctx.fillStyle = "#8b93a7";
+    ctx.fillText("now " + last[2].toFixed(1) + " ms · min " + last[0].toFixed(1) + " · max " + last[1].toFixed(1)
+        + " · 30 s window", 6, 14);
 }
 
 /* ---------- offset chart ---------- */

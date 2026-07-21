@@ -1,5 +1,7 @@
 #include "rtpreceiver.h"
+#include <algorithm>
 #include <arpa/inet.h>
+#include <cmath>
 #include <cstring>
 #include <net/if.h>
 #include <netinet/in.h>
@@ -111,6 +113,7 @@ bool RtpReceiver::Configure(const SdpSession& session, const std::vector<std::st
     m_nConcealed = 0;
     m_nDuplicates = 0;
     m_nMergedFromSecondary = 0;
+    m_qBufferHistory.clear();
     m_meters.Reset();
 
     m_bRun = true;
@@ -251,6 +254,26 @@ void RtpReceiver::PlayoutLoop()
     std::vector<float> vSilence(m_nFramesPerPacket * 2, 0.f);
     const long nTargetDelayFrames = m_nPlayoutDelayMs * SAMPLE_RATE / 1000;
 
+    //buffer level envelope: min/max within a 100 ms bucket -> history
+    auto bucketStart = std::chrono::steady_clock::now();
+    float fBufMin = 1e9f, fBufMax = 0.f;
+    auto SampleBuffer = [&]()
+    {
+        float fMs = float(m_alsa.DelayFrames()) * 1000.0f / SAMPLE_RATE;
+        fBufMin = std::min(fBufMin, fMs);
+        fBufMax = std::max(fBufMax, fMs);
+        auto now = std::chrono::steady_clock::now();
+        if(now - bucketStart >= std::chrono::milliseconds(100))
+        {
+            bucketStart = now;
+            std::lock_guard<std::mutex> lg(m_mutex);
+            m_qBufferHistory.push_back({fBufMin, fBufMax, fMs});
+            if(m_qBufferHistory.size() > 300) { m_qBufferHistory.pop_front(); }
+            fBufMin = 1e9f;
+            fBufMax = 0.f;
+        }
+    };
+
     while(m_bRun)
     {
         auto& slot = m_vJitter[nNextSeq % JITTER_SLOTS];
@@ -263,6 +286,7 @@ void RtpReceiver::PlayoutLoop()
             slot.nGeneration = 0;
             m_nPlayed++;
             nNextSeq++;
+            SampleBuffer();
         }
         else if(m_bReceiving)
         {
@@ -284,6 +308,7 @@ void RtpReceiver::PlayoutLoop()
                     m_alsa.Write(vSilence.data(), m_nFramesPerPacket, dGain);
                     m_nConcealed++;
                     nNextSeq++;
+                    SampleBuffer();
                 }
             }
             else
@@ -292,6 +317,7 @@ void RtpReceiver::PlayoutLoop()
                 m_alsa.Write(vSilence.data(), m_nFramesPerPacket, dGain);
                 m_nConcealed++;
                 nNextSeq++;
+                SampleBuffer();
             }
         }
         else
@@ -333,6 +359,13 @@ json RtpReceiver::GetStatusJson() const
     js["session_name"] = m_session.sName;
     js["channels"] = m_session.nChannels;
     js["bits"] = m_session.nBitsPerSample;
+    js["playout_delay_ms"] = m_nPlayoutDelayMs;
+    js["buffer_history"] = json::array();
+    for(const auto& sample : m_qBufferHistory)
+    {
+        js["buffer_history"].push_back({std::round(sample.fMin*10)/10.0, std::round(sample.fMax*10)/10.0,
+                                        std::round(sample.fLast*10)/10.0});
+    }
     js["legs"] = json::array();
     for(size_t nLeg = 0; nLeg < m_nLegCount; nLeg++)
     {
