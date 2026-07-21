@@ -53,7 +53,21 @@ function connectWs() {
     const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
     ws.onopen = () => $("conn-dot").classList.add("on");
     ws.onclose = () => { $("conn-dot").classList.remove("on"); setTimeout(connectWs, 2000); };
-    ws.onmessage = e => { status = JSON.parse(e.data); render(); };
+    ws.onmessage = e => {
+        const msg = JSON.parse(e.data);
+        if (msg.meters && !msg.version) { applyMeters(msg.meters); return; }   //20 Hz fast path
+        status = msg;
+        render();
+    };
+}
+
+function applyMeters(m) {
+    const rxOn = status.receiver && status.receiver.running;
+    const txOn = status.sender && status.sender.running;
+    $("d-rx-meter-l").style.width = meterWidth(rxOn ? m.rx[0] : -120);
+    $("d-rx-meter-r").style.width = meterWidth(rxOn ? m.rx[1] : -120);
+    $("d-tx-meter-l").style.width = meterWidth(txOn ? m.tx[0] : -120);
+    $("d-tx-meter-r").style.width = meterWidth(txOn ? m.tx[1] : -120);
 }
 
 /* ---------- render ---------- */
@@ -121,6 +135,7 @@ function render() {
     }
 
     drawBufferChart(rx.buffer_history || [], rx.critical_ms || 2, rx.running && rx.receiving);
+    renderMatrix(rx);
 
     $("rx-stats").innerHTML =
         `<tr><td>Played</td><td>${rx.played || 0}</td></tr>
@@ -240,6 +255,31 @@ function drawBufferChart(history, criticalMs, live) {
     ctx.fillStyle = "#8b93a7";
     ctx.fillText("now " + last[2].toFixed(1) + " ms · min " + last[0].toFixed(1) + " · max " + last[1].toFixed(1)
         + " · 30 s window · scale 0–" + top + " ms", 6, 14);
+}
+
+/* ---------- monitor matrix ---------- */
+let matrixCh = -1;
+function renderMatrix(rx) {
+    const n = rx.running ? rx.channels || 0 : 0;
+    if (n < 2) { $("rx-matrix-card").style.display = "none"; matrixCh = -1; return; }
+    $("rx-matrix-card").style.display = "";
+
+    if (n !== matrixCh) {       //rebuild only when the channel count changes
+        matrixCh = n;
+        $("rx-matrix").innerHTML = [["L", "receiver.monitor_left"], ["R", "receiver.monitor_right"]].map(([ear, key]) =>
+            `<div class="row seg"><span class="ear">${ear}</span>` +
+            Array.from({length: n}, (_, c) =>
+                `<button class="btn" data-key="${key}" data-ch="${c}">${c + 1}</button>`).join("") +
+            `</div>`).join("");
+        document.querySelectorAll("#rx-matrix .btn").forEach(btn => {
+            btn.onclick = () => setConfig({[btn.dataset.key]: parseInt(btn.dataset.ch, 10)});
+        });
+    }
+    const mon = rx.monitor || [0, 1];
+    document.querySelectorAll("#rx-matrix .btn").forEach(btn => {
+        const ear = btn.dataset.key === "receiver.monitor_left" ? 0 : 1;
+        btn.classList.toggle("active", mon[ear] == btn.dataset.ch);
+    });
 }
 
 /* ---------- offset chart ---------- */

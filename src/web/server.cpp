@@ -38,11 +38,12 @@ WebServer::~WebServer()
 }
 
 bool WebServer::Start(int nPort, const std::string& sWebRoot, const std::string& sFilesDir,
-                      StatusProvider pStatus, ConfigApplied pApplied, ActionHandler pAction)
+                      StatusProvider pStatus, StatusProvider pMeters, ConfigApplied pApplied, ActionHandler pAction)
 {
     Stop();
     m_sFilesDir = sFilesDir;
     m_pStatus = std::move(pStatus);
+    m_pMeters = std::move(pMeters);
     m_pApplied = std::move(pApplied);
     m_pAction = std::move(pAction);
 
@@ -98,10 +99,14 @@ void WebServer::WsClose(const mg_connection* pConn, void* pUser)
 
 void WebServer::PushLoop()
 {
+    //50 ms ticks: meters go out on every tick (20 Hz), the full status on
+    //every fifth (4 Hz) - the meter message is ~60 bytes, so the fast path
+    //costs next to nothing
+    int nTick = 0;
     while(m_bRun)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(250));
-        if(!m_pStatus) { continue; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        nTick++;
 
         std::set<mg_connection*> setClients;
         {
@@ -110,11 +115,13 @@ void WebServer::PushLoop()
         }
         if(setClients.empty()) { continue; }
 
-        auto sStatus = m_pStatus().dump();
+        bool bFull = (nTick % 5 == 0);
+        if(bFull ? !m_pStatus : !m_pMeters) { continue; }
+        auto sMessage = (bFull ? m_pStatus() : m_pMeters()).dump();
         for(auto* pConn : setClients)
         {
             mg_lock_connection(pConn);
-            mg_websocket_write(pConn, MG_WEBSOCKET_OPCODE_TEXT, sStatus.data(), sStatus.size());
+            mg_websocket_write(pConn, MG_WEBSOCKET_OPCODE_TEXT, sMessage.data(), sMessage.size());
             mg_unlock_connection(pConn);
         }
     }

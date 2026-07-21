@@ -222,12 +222,15 @@ void RtpReceiver::HandlePacket(size_t nLeg, const uint8_t* pData, size_t nSize)
         if(nSample & 0x800000) { nSample |= 0xff000000; }
         return nSample / 8388608.0f;
     };
+    int nMonLeft = m_nMonLeft.load(), nMonRight = m_nMonRight.load();
+    size_t nLeft = nMonLeft >= 0 && static_cast<size_t>(nMonLeft) < nChannels ? nMonLeft : 0;
+    size_t nRight = nMonRight >= 0 && static_cast<size_t>(nMonRight) < nChannels ? nMonRight
+                    : (nChannels >= 2 ? 1 : nLeft);
     slot.vSamples.resize(nFrames * 2);
     for(size_t nFrame = 0; nFrame < nFrames; nFrame++)
     {
-        float fLeft = Decode(nFrame * nChannels);
-        slot.vSamples[nFrame*2] = fLeft;
-        slot.vSamples[nFrame*2+1] = nChannels >= 2 ? Decode(nFrame * nChannels + 1) : fLeft;
+        slot.vSamples[nFrame*2] = Decode(nFrame * nChannels + nLeft);
+        slot.vSamples[nFrame*2+1] = Decode(nFrame * nChannels + nRight);
     }
     slot.nSeq = nSeq;
     slot.nGeneration = uint32_t(nSeq)+1;    //publish after the samples are in place
@@ -381,6 +384,15 @@ json RtpReceiver::GetStatusJson() const
     js["bits"] = m_session.nBitsPerSample;
     js["playout_delay_ms"] = m_nPlayoutDelayMs;
     js["critical_ms"] = 2.0 * m_nFramesPerPacket * 1000.0 / 48000.0;    //below this the playout conceals
+    {
+        //effective monitor selection (same clamping as the packet decode)
+        size_t nCh = m_session.nChannels > 0 ? static_cast<size_t>(m_session.nChannels) : 1;
+        int nMonLeft = m_nMonLeft.load(), nMonRight = m_nMonRight.load();
+        size_t nLeft = nMonLeft >= 0 && static_cast<size_t>(nMonLeft) < nCh ? nMonLeft : 0;
+        size_t nRight = nMonRight >= 0 && static_cast<size_t>(nMonRight) < nCh ? nMonRight
+                        : (nCh >= 2 ? 1 : nLeft);
+        js["monitor"] = {nLeft, nRight};
+    }
     js["buffer_history"] = json::array();
     for(const auto& sample : m_qBufferHistory)
     {

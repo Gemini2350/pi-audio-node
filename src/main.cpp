@@ -126,6 +126,8 @@ int main(int argc, char** argv)
 
     rtp::RtpSender sender(ptpClient);
     rtp::RtpReceiver receiver(ptpClient, alsa);
+    receiver.SetMonitor(Config::Get().GetValue<int>("receiver.monitor_left", -1),
+                        Config::Get().GetValue<int>("receiver.monitor_right", -1));
     ApplySender(sender, sFilesDir);
 
     //---- nmos ----
@@ -366,7 +368,14 @@ int main(int argc, char** argv)
         return {{"status", nStatus}};
     };
 
-    web.Start(Config::Get().GetValue<int>("web.port", 80), sWebRoot, sFilesDir, StatusJson,
+    auto MetersJson = [&]() -> json
+    {
+        return {{"meters", {
+            {"rx", {receiver.GetMeters().LeftDb(), receiver.GetMeters().RightDb()}},
+            {"tx", {sender.GetMeters().LeftDb(), sender.GetMeters().RightDb()}}
+        }}};
+    };
+    web.Start(Config::Get().GetValue<int>("web.port", 80), sWebRoot, sFilesDir, StatusJson, MetersJson,
               [&](const json& jsChanged)
               {
                   //leg toggles apply live - everything else restarts the sender
@@ -390,6 +399,11 @@ int main(int argc, char** argv)
                   {
                       if(sKey == "ptp.domain") { ptpClient.SetDomain(jsValue.get<int>()); }
                       if(sKey == "receiver.alsa_device") { alsa.Open(jsValue.get<std::string>()); }
+                      if(sKey == "receiver.monitor_left" || sKey == "receiver.monitor_right")
+                      {
+                          receiver.SetMonitor(Config::Get().GetValue<int>("receiver.monitor_left", -1),
+                                              Config::Get().GetValue<int>("receiver.monitor_right", -1));
+                      }
                   }
               }, Action);
 

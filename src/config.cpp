@@ -27,6 +27,8 @@ namespace
                 {"enabled", true},
                 {"playout_delay_ms", 20},
                 {"gain_db", 0.0},
+                {"monitor_left", -1},       //-1 = automatic (first pair)
+                {"monitor_right", -1},
                 {"alsa_device", "default:CARD=sndrpihifiberry"}
             }},
             {"sender", {

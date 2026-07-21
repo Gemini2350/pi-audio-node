@@ -22,8 +22,10 @@ namespace pan::web
 
             ~WebServer();
 
+            /** pMeters delivers a tiny high-rate message (20 Hz) for the level
+            *   meters, pStatus the full state (4 Hz) **/
             bool Start(int nPort, const std::string& sWebRoot, const std::string& sFilesDir,
-                       StatusProvider pStatus, ConfigApplied pApplied, ActionHandler pAction);
+                       StatusProvider pStatus, StatusProvider pMeters, ConfigApplied pApplied, ActionHandler pAction);
             void Stop();
 
         private:
@@ -37,6 +39,7 @@ namespace pan::web
             mg_context* m_pServer = nullptr;
             std::string m_sFilesDir;
             StatusProvider m_pStatus;
+            StatusProvider m_pMeters;
             ConfigApplied m_pApplied;
             ActionHandler m_pAction;
 

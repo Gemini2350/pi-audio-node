@@ -36,6 +36,14 @@ namespace pan::rtp
 
             bool IsRunning() const { return m_bRun.load(); }
             bool IsReceiving() const { return m_bReceiving.load(); }
+
+            /** which source channel plays on the left/right ear (0 based),
+            *   -1 = automatic (first pair). applies live, no restart **/
+            void SetMonitor(int nLeft, int nRight)
+            {
+                m_nMonLeft = nLeft;
+                m_nMonRight = nRight;
+            }
             nlohmann::json GetStatusJson() const;
             audio::Meters& GetMeters() { return m_meters; }
 
@@ -94,6 +102,8 @@ namespace pan::rtp
             std::atomic<uint64_t> m_nConcealed{0};
             std::atomic<uint64_t> m_nDuplicates{0};
             std::atomic<uint64_t> m_nMergedFromSecondary{0};
+            std::atomic<int> m_nMonLeft{-1};
+            std::atomic<int> m_nMonRight{-1};
             audio::Meters m_meters;
 
             //buffer level envelope for the ui chart: one sample per 100 ms

@@ -19,8 +19,11 @@ namespace pan::audio
                     fPeakL = std::max(fPeakL, std::fabs(pInterleaved[i*2]));
                     fPeakR = std::max(fPeakR, std::fabs(pInterleaved[i*2+1]));
                 }
-                Update(m_fLeft, fPeakL);
-                Update(m_fRight, fPeakR);
+                //ppm style: instant attack, ~20 dB per 1.5 s release - decay is
+                //time based so the ballistics do not depend on the packet rate
+                float fDecay = std::pow(10.0f, -13.3f * nFrames / 48000.0f / 20.0f);
+                Update(m_fLeft, fPeakL, fDecay);
+                Update(m_fRight, fPeakR, fDecay);
             }
 
             void Reset() { m_fLeft = 0.f; m_fRight = 0.f; }
@@ -29,10 +32,10 @@ namespace pan::audio
             double RightDb() const { return ToDb(m_fRight.load()); }
 
         private:
-            static void Update(std::atomic<float>& fStore, float fPeak)
+            static void Update(std::atomic<float>& fStore, float fPeak, float fDecay)
             {
                 float fCurrent = fStore.load();
-                float fDecayed = fCurrent * 0.85f;
+                float fDecayed = fCurrent * fDecay;
                 fStore = std::max(fPeak, fDecayed);
             }
             static double ToDb(float f) { return f > 1e-6f ? 20.0*log10(f) : -120.0; }
