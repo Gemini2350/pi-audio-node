@@ -300,9 +300,9 @@ setInterval(() => {
     const tai = new Date(ptpClock.ms + (performance.now() - ptpClock.at));
     const utc = new Date(tai.getTime() - ptpClock.utc * 1000);
     el.textContent = `${tai.getUTCFullYear()}-${p(tai.getUTCMonth() + 1)}-${p(tai.getUTCDate())} `
-        + `${p(tai.getUTCHours())}:${p(tai.getUTCMinutes())}:${p(tai.getUTCSeconds())}.${Math.floor(tai.getUTCMilliseconds() / 100)} TAI`
+        + `${p(tai.getUTCHours())}:${p(tai.getUTCMinutes())}:${p(tai.getUTCSeconds())} TAI`
         + ` · ${p(utc.getUTCHours())}:${p(utc.getUTCMinutes())}:${p(utc.getUTCSeconds())} UTC (TAI−${ptpClock.utc}s)`;
-}, 100);
+}, 250);
 
 /* ---------- offset chart ---------- */
 function drawChart(history) {
