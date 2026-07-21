@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <sys/stat.h>
 #include "audio/alsaout.h"
@@ -201,13 +202,44 @@ int main(int argc, char** argv)
             auto sRegistry = node.GetStatusJson().value("registry", "");
             if(sRegistry.empty()) { return {{"error", "not registered with a registry"}}; }
 
-            auto jsSenders = nmos::HttpJson("GET", sRegistry + "/x-nmos/query/v1.3/senders", nullptr, nStatus);
-            if(!jsSenders || !jsSenders->is_array())
+            //the query api pages its results - walk the pages via paging.until
+            //(resources are ordered by update time, "version" is that timestamp)
+            auto ParseVersion = [](const std::string& s) -> std::pair<uint64_t, uint64_t>
+            {
+                auto nColon = s.find(':');
+                if(nColon == std::string::npos) { return {0, 0}; }
+                return {strtoull(s.c_str(), nullptr, 10), strtoull(s.c_str()+nColon+1, nullptr, 10)};
+            };
+            auto FetchAll = [&](const std::string& sUrl) -> std::optional<json>
+            {
+                json jsAll = json::array();
+                std::set<std::string> setIds;
+                std::string sQuery = sUrl + "?paging.limit=100";
+                for(int nPage = 0; nPage < 20; nPage++)
+                {
+                    auto jsPage = nmos::HttpJson("GET", sQuery, nullptr, nStatus);
+                    if(!jsPage || !jsPage->is_array()) { return jsAll.empty() ? std::nullopt : std::optional(jsAll); }
+                    std::string sOldest;
+                    size_t nNew = 0;
+                    for(const auto& js : *jsPage)
+                    {
+                        auto sVersion = js.value("version", "");
+                        if(sOldest.empty() || ParseVersion(sVersion) < ParseVersion(sOldest)) { sOldest = sVersion; }
+                        if(setIds.insert(js.value("id", "")).second) { jsAll.push_back(js); nNew++; }
+                    }
+                    if(jsPage->size() < 100 || nNew == 0 || sOldest.empty()) { break; }
+                    sQuery = sUrl + "?paging.limit=100&paging.until=" + sOldest;
+                }
+                return jsAll;
+            };
+
+            auto jsSenders = FetchAll(sRegistry + "/x-nmos/query/v1.3/senders");
+            if(!jsSenders)
             {
                 return {{"error", "query api not reachable (status " + std::to_string(nStatus) + ")"}};
             }
-            auto jsFlows = nmos::HttpJson("GET", sRegistry + "/x-nmos/query/v1.3/flows", nullptr, nStatus);
-            auto jsDevices = nmos::HttpJson("GET", sRegistry + "/x-nmos/query/v1.3/devices", nullptr, nStatus);
+            auto jsFlows = FetchAll(sRegistry + "/x-nmos/query/v1.3/flows");
+            auto jsDevices = FetchAll(sRegistry + "/x-nmos/query/v1.3/devices");
 
             auto Find = [](const std::optional<json>& jsList, const std::string& sId) -> json
             {

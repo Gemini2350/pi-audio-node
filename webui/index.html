@@ -66,10 +66,6 @@
             <table class="kv" id="rx-stats"></table>
         </div>
         <div class="card wide">
-            <h2>NMOS senders <button class="btn right" id="rx-browse">Refresh</button></h2>
-            <div id="rx-senders" class="sub">–</div>
-        </div>
-        <div class="card wide">
             <h2>Buffer <span class="sub">(ms of audio buffered ahead of playout · band = min/max per 100 ms)</span></h2>
             <canvas id="rx-buffer-chart" height="120"></canvas>
         </div>
@@ -82,6 +78,10 @@
                 <label class="inline">Gain <input type="range" id="rx-gain" min="-40" max="12" step="1" value="0">
                     <span id="rx-gain-val">0 dB</span></label>
             </div>
+        </div>
+        <div class="card wide">
+            <h2>NMOS senders <button class="btn right" id="rx-browse">Refresh</button></h2>
+            <div id="rx-senders" class="sub">–</div>
         </div>
     </div>
 </section>
