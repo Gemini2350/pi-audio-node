@@ -101,6 +101,7 @@ bool RtpSender::Configure(const std::vector<Leg>& vLegs, uint16_t nPort, int nPa
         }
         m_vSockets.push_back(nSocket);
         m_vSourceIps.push_back(InterfaceIp(leg.sInterface));
+        m_abLegEnabled[m_vSockets.size()-1] = leg.bEnabled;
     }
 
     std::random_device rd;
@@ -190,9 +191,10 @@ void RtpSender::SendLoop()
 
         {
             std::lock_guard<std::mutex> lg(m_mutex);
-            for(int nSocket : m_vSockets)
+            for(size_t nLeg = 0; nLeg < m_vSockets.size(); nLeg++)
             {
-                if(send(nSocket, vPacket.data(), vPacket.size(), 0) < 0)
+                if(!m_abLegEnabled[nLeg]) { continue; }
+                if(send(m_vSockets[nLeg], vPacket.data(), vPacket.size(), 0) < 0)
                 {
                     m_nSendErrors++;
                 }
@@ -213,10 +215,16 @@ SdpSession RtpSender::DescribeSession() const
     session.nPayloadType = m_nPayloadType;
     session.dPacketTimeMs = m_nPacketTimeUs / 1000.0;
     session.sPtpGrandmaster = m_ptp.GrandmasterId();
+    //only enabled legs go into the sdp - receivers must not join a silent group
+    size_t nEnabled = 0;
+    for(size_t nLeg = 0; nLeg < m_vLegs.size(); nLeg++) { if(m_abLegEnabled[nLeg]) { nEnabled++; } }
     for(size_t nLeg = 0; nLeg < m_vLegs.size(); nLeg++)
     {
-        session.vLegs.push_back({m_vLegs.size() > 1 ? (nLeg == 0 ? "PRI" : "SEC") : "",
-                                 m_vLegs[nLeg].sMulticast, "", m_nPort});
+        if(!m_abLegEnabled[nLeg]) { continue; }
+        session.vLegs.push_back({nEnabled > 1 ? (nLeg == 0 ? "PRI" : "SEC") : "",
+                                 m_vLegs[nLeg].sMulticast,
+                                 nLeg < m_vSourceIps.size() ? m_vSourceIps[nLeg] : "",
+                                 m_nPort});
     }
     return session;
 }
@@ -239,9 +247,10 @@ json RtpSender::GetStatusJson() const
     std::lock_guard<std::mutex> lg(m_mutex);
     js["source"] = m_sSourceName;
     js["legs"] = json::array();
-    for(const auto& leg : m_vLegs)
+    for(size_t nLeg = 0; nLeg < m_vLegs.size(); nLeg++)
     {
-        js["legs"].push_back({{"interface", leg.sInterface}, {"multicast", leg.sMulticast}, {"port", m_nPort}});
+        js["legs"].push_back({{"interface", m_vLegs[nLeg].sInterface}, {"multicast", m_vLegs[nLeg].sMulticast},
+                              {"port", m_nPort}, {"enabled", m_abLegEnabled[nLeg].load()}});
     }
     return js;
 }

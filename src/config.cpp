@@ -39,6 +39,8 @@ namespace
                 {"loop", true},
                 {"multicast_primary", "239.69.145.10"},
                 {"multicast_secondary", "239.69.146.10"},
+                {"leg1_enabled", true},
+                {"leg2_enabled", true},
                 {"port", 5004},
                 {"packet_time_us", 1000},
                 {"payload_type", 96},

@@ -157,7 +157,9 @@ std::string pan::rtp::GenerateSdp(const SdpSession& session, const std::string& 
     for(size_t nLeg = 0; nLeg < session.vLegs.size(); nLeg++)
     {
         const auto& leg = session.vLegs[nLeg];
-        const auto& sSourceIp = nLeg < vSourceIps.size() ? vSourceIps[nLeg] : sOriginIp;
+        //per-leg source (set by the sender) wins over the positional list
+        const auto& sSourceIp = !leg.sSourceFilter.empty() ? leg.sSourceFilter
+                                : (nLeg < vSourceIps.size() ? vSourceIps[nLeg] : sOriginIp);
         sdp << "m=audio " << leg.nPort << " RTP/AVP " << session.nPayloadType << "\r\n"
             << "c=IN IP4 " << leg.sMulticast << "/32\r\n"
             << "a=source-filter: incl IN IP4 " << leg.sMulticast << " " << sSourceIp << "\r\n"

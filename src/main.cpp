@@ -38,10 +38,12 @@ namespace
             return;
         }
         auto vInterfaces = Interfaces();
-        std::vector<rtp::RtpSender::Leg> vLegs{{vInterfaces[0], js.value("multicast_primary", "239.69.145.10")}};
+        std::vector<rtp::RtpSender::Leg> vLegs{{vInterfaces[0], js.value("multicast_primary", "239.69.145.10"),
+                                                js.value("leg1_enabled", true)}};
         if(vInterfaces.size() > 1)
         {
-            vLegs.push_back({vInterfaces[1], js.value("multicast_secondary", "239.69.146.10")});
+            vLegs.push_back({vInterfaces[1], js.value("multicast_secondary", "239.69.146.10"),
+                             js.value("leg2_enabled", true)});
         }
         sender.Configure(vLegs, static_cast<uint16_t>(js.value("port", 5004)), js.value("payload_type", 96),
                          js.value("packet_time_us", 1000), audio::CreateFromConfig(js, sFilesDir));
@@ -149,6 +151,19 @@ int main(int argc, char** argv)
     web.Start(Config::Get().GetValue<int>("web.port", 80), sWebRoot, sFilesDir, StatusJson,
               [&](const json& jsChanged)
               {
+                  //leg toggles apply live - everything else restarts the sender
+                  bool bOnlyLegToggle = !jsChanged.empty();
+                  for(const auto& [sKey, jsValue] : jsChanged.items())
+                  {
+                      if(sKey != "sender.leg1_enabled" && sKey != "sender.leg2_enabled") { bOnlyLegToggle = false; }
+                  }
+                  if(bOnlyLegToggle)
+                  {
+                      sender.SetLegEnabled(0, Config::Get().GetValue<bool>("sender.leg1_enabled", true));
+                      sender.SetLegEnabled(1, Config::Get().GetValue<bool>("sender.leg2_enabled", true));
+                      node.BumpVersion();
+                      return;
+                  }
                   for(const auto& [sKey, jsValue] : jsChanged.items())
                   {
                       if(sKey.rfind("sender.", 0) == 0) { ApplySender(sender, sFilesDir); node.BumpVersion(); break; }

@@ -172,7 +172,7 @@ json ConnectionApi::SenderActiveNow() const
             jsParams[i]["source_ip"] = i < vIps.size() ? json(vIps[i]) : json();
             jsParams[i]["destination_ip"] = jsLegs[i]["multicast"];
             jsParams[i]["destination_port"] = jsLegs[i]["port"];
-            jsParams[i]["rtp_enabled"] = true;
+            jsParams[i]["rtp_enabled"] = sender.LegEnabled(i);
         }
         else
         {
@@ -226,6 +226,15 @@ void ConnectionApi::ActivateSender()
     if(jsParams.size() > 0 && jsParams[0].contains("destination_port") && jsParams[0]["destination_port"].is_number())
     {
         Config::Get().SetValue("sender.port", jsParams[0]["destination_port"].get<int>());
+    }
+    for(size_t i = 0; i < jsParams.size() && i < 2; i++)
+    {
+        if(jsParams[i].contains("rtp_enabled") && jsParams[i]["rtp_enabled"].is_boolean())
+        {
+            Config::Get().SetValue(i == 0 ? "sender.leg1_enabled" : "sender.leg2_enabled",
+                                   jsParams[i]["rtp_enabled"].get<bool>());
+            m_node.Sender().SetLegEnabled(i, jsParams[i]["rtp_enabled"].get<bool>());
+        }
     }
 
     m_jsSenderActive = m_jsSenderStaged;

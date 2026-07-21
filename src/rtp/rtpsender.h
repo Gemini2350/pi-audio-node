@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <atomic>
 #include <memory>
 #include <mutex>
@@ -27,7 +28,18 @@ namespace pan::rtp
             {
                 std::string sInterface;
                 std::string sMulticast;
+                bool bEnabled = true;
             };
+
+            /** live per-leg rtp enable (ST 2022-7 leg testing) - no stream restart **/
+            void SetLegEnabled(size_t nLeg, bool bEnabled)
+            {
+                if(nLeg < 2) { m_abLegEnabled[nLeg] = bEnabled; }
+            }
+            bool LegEnabled(size_t nLeg) const
+            {
+                return nLeg < 2 && m_abLegEnabled[nLeg].load();
+            }
 
             /** (re)start with the given settings; empty legs stops the sender **/
             bool Configure(const std::vector<Leg>& vLegs, uint16_t nPort, int nPayloadType,
@@ -61,6 +73,7 @@ namespace pan::rtp
             std::atomic<bool> m_bWaitingForPtp{false};
             std::atomic<uint64_t> m_nPacketsSent{0};
             std::atomic<uint64_t> m_nSendErrors{0};
+            std::array<std::atomic<bool>, 2> m_abLegEnabled{{true, true}};
             uint32_t m_nSsrc = 0;
             audio::Meters m_meters;
     };

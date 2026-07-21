@@ -119,7 +119,9 @@ function render() {
         `<tr><td>Packets</td><td>${tx.packets_sent || 0}</td></tr>
          <tr><td>Send errors</td><td>${tx.send_errors || 0}</td></tr>
          <tr><td>Source</td><td>${tx.source || "–"}</td></tr>` +
-        (tx.legs || []).map((leg, i) => `<tr><td>Leg ${i + 1}</td><td>${leg.multicast}:${leg.port} @ ${leg.interface}</td></tr>`).join("");
+        (tx.legs || []).map((leg, i) =>
+            `<tr><td>Leg ${i + 1}</td><td>${leg.multicast}:${leg.port} @ ${leg.interface}` +
+            (leg.enabled === false ? ' <span class="pill off">RTP off</span>' : "") + `</td></tr>`).join("");
 
     /* ptp page */
     pill($("ptp-state"), ptp.synced ? "Locked" : "Not synced", ptp.synced ? "ok" : "warn");
@@ -198,6 +200,8 @@ $("tx-start").onclick = () => setConfig({
     "sender.port": parseInt($("tx-port").value, 10)
 });
 $("tx-stop").onclick = () => setConfig({"sender.enabled": false});
+$("tx-leg1").onchange = () => setConfig({"sender.leg1_enabled": $("tx-leg1").checked});
+$("tx-leg2").onchange = () => setConfig({"sender.leg2_enabled": $("tx-leg2").checked});
 $("tx-show-sdp").onclick = async () => {
     const result = await api("/api/action/sender-sdp", "POST", {});
     $("tx-sdp").textContent = result.sdp || result.error || "sender is not running";
@@ -232,6 +236,8 @@ $("ptp-domain").onchange = () => setConfig({"ptp.domain": parseInt($("ptp-domain
 async function loadConfig() {
     config = await api("/api/config");
     $("tx-label").value = config.sender.label || "";
+    $("tx-leg1").checked = config.sender.leg1_enabled !== false;
+    $("tx-leg2").checked = config.sender.leg2_enabled !== false;
     $("tx-mc1").value = config.sender.multicast_primary;
     $("tx-mc2").value = config.sender.multicast_secondary;
     $("tx-port").value = config.sender.port;
