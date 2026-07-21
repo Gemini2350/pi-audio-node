@@ -568,6 +568,17 @@ json PtpClient::GetStatusJson() const
     //comparison is meaningless - report only the servo correction: how far the
     //latest measurement deviates from the established mapping
     js["correction_ns"] = m_qOffsetHistory.empty() ? 0.0 : m_qOffsetHistory.back().second;
+
+    //ptp time in ms (ns would exceed the double precision of json/js), plus
+    //the announced tai-utc offset so the ui can render both clocks
+    js["time_ms"] = m_bSynced ? PtpTimeNs() / 1000000ULL : 0;
+    int nUtcOffset = 37;
+    if(m_selectedMaster)
+    {
+        auto it = m_mForeign.find(*m_selectedMaster);
+        if(it != m_mForeign.end()) { nUtcOffset = it->second.dataset.nUtcOffset; }
+    }
+    js["utc_offset"] = nUtcOffset;
     js["mean_path_delay_ns"] = m_bHaveDelay ? json(m_dMeanPathDelayNs) : json();
     js["masters"] = json::array();
 

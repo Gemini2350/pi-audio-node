@@ -181,6 +181,7 @@ function render() {
 
     /* ptp page */
     pill($("ptp-state"), ptp.synced ? "Locked" : "Not synced", ptp.synced ? "ok" : "warn");
+    ptpClock = ptp.synced && ptp.time_ms ? {ms: ptp.time_ms, at: performance.now(), utc: ptp.utc_offset ?? 37} : null;
     $("ptp-identity").textContent = ptp.identity || "–";
     $("ptp-offset").textContent = ptp.synced ? fmtNs(ptp.correction_ns) : "–";
     $("ptp-delay").textContent = fmtNs(ptp.mean_path_delay_ns);
@@ -289,6 +290,19 @@ function renderMatrix(rx) {
         btn.classList.toggle("active", mon[ear] == btn.dataset.ch);
     });
 }
+
+/* ---------- ptp clock ---------- */
+let ptpClock = null;    //snapshot of the last status push, extrapolated locally
+setInterval(() => {
+    const el = $("ptp-time");
+    if (!ptpClock) { el.textContent = "PTP time: – (not synced)"; return; }
+    const p = n => String(n).padStart(2, "0");
+    const tai = new Date(ptpClock.ms + (performance.now() - ptpClock.at));
+    const utc = new Date(tai.getTime() - ptpClock.utc * 1000);
+    el.textContent = `${tai.getUTCFullYear()}-${p(tai.getUTCMonth() + 1)}-${p(tai.getUTCDate())} `
+        + `${p(tai.getUTCHours())}:${p(tai.getUTCMinutes())}:${p(tai.getUTCSeconds())}.${Math.floor(tai.getUTCMilliseconds() / 100)} TAI`
+        + ` · ${p(utc.getUTCHours())}:${p(utc.getUTCMinutes())}:${p(utc.getUTCSeconds())} UTC (TAI−${ptpClock.utc}s)`;
+}, 100);
 
 /* ---------- offset chart ---------- */
 function drawChart(history) {
