@@ -70,16 +70,16 @@ function render() {
 
     pill($("d-rx-state"), rx.running ? (rx.receiving ? "Empfängt" : "Kein Signal") : "Aus",
          rx.running ? (rx.receiving ? "ok" : "bad") : "off");
-    $("d-rx-meter-l").style.width = meterWidth(rx.meters ? rx.meters.left_db : -120);
-    $("d-rx-meter-r").style.width = meterWidth(rx.meters ? rx.meters.right_db : -120);
+    $("d-rx-meter-l").style.width = meterWidth(rx.running && rx.meters ? rx.meters.left_db : -120);
+    $("d-rx-meter-r").style.width = meterWidth(rx.running && rx.meters ? rx.meters.right_db : -120);
     $("d-rx-info").textContent = rx.running
         ? `${rx.session_name || ""} · ${(rx.legs || []).length} Leg(s) · ${rx.played || 0} Pakete`
         : "über NMOS patchen oder SDP einfügen";
 
     pill($("d-tx-state"), tx.running ? (tx.waiting_for_ptp ? "Wartet auf PTP" : "Sendet") : "Aus",
          tx.running ? (tx.waiting_for_ptp ? "warn" : "ok") : "off");
-    $("d-tx-meter-l").style.width = meterWidth(tx.meters ? tx.meters.left_db : -120);
-    $("d-tx-meter-r").style.width = meterWidth(tx.meters ? tx.meters.right_db : -120);
+    $("d-tx-meter-l").style.width = meterWidth(tx.running && tx.meters ? tx.meters.left_db : -120);
+    $("d-tx-meter-r").style.width = meterWidth(tx.running && tx.meters ? tx.meters.right_db : -120);
     $("d-tx-info").textContent = tx.running ? `${tx.source} · ${tx.packets_sent} Pakete` : "–";
 
     const nmos = status.nmos || {};
