@@ -8,6 +8,7 @@
 #include <random>
 #include <sys/socket.h>
 #include <unistd.h>
+#include "config.h"
 #include "log.h"
 #include "ptp/ptpclient.h"
 
@@ -207,7 +208,8 @@ SdpSession RtpSender::DescribeSession() const
 {
     std::lock_guard<std::mutex> lg(m_mutex);
     SdpSession session;
-    session.sName = "pi-audio-node " + m_sSourceName;
+    auto sLabel = Config::Get().GetValue<std::string>("sender.label", "");
+    session.sName = sLabel.empty() ? "pi-audio-node " + m_sSourceName : sLabel;
     session.nPayloadType = m_nPayloadType;
     session.dPacketTimeMs = m_nPacketTimeUs / 1000.0;
     session.sPtpGrandmaster = m_ptp.GrandmasterId();

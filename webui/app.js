@@ -187,6 +187,7 @@ document.querySelectorAll("#tx-source-seg .btn").forEach(btn => {
 });
 $("tx-start").onclick = () => setConfig({
     "sender.enabled": true,
+    "sender.label": $("tx-label").value.trim(),
     "sender.source": txSource,
     "sender.tone_hz": parseFloat($("tx-freq").value),
     "sender.tone_level_db": parseFloat($("tx-level").value),
@@ -230,6 +231,7 @@ $("ptp-domain").onchange = () => setConfig({"ptp.domain": parseInt($("ptp-domain
 
 async function loadConfig() {
     config = await api("/api/config");
+    $("tx-label").value = config.sender.label || "";
     $("tx-mc1").value = config.sender.multicast_primary;
     $("tx-mc2").value = config.sender.multicast_secondary;
     $("tx-port").value = config.sender.port;

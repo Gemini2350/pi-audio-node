@@ -262,7 +262,8 @@ json NmosNode::BuildSender() const
     json js;
     js["id"] = m_sSenderId;
     js["version"] = Version();
-    js["label"] = Config::Get().GetValue<std::string>("device.label", "pi-audio-node") + " sender";
+    auto sLabel = Config::Get().GetValue<std::string>("sender.label", "");
+    js["label"] = sLabel.empty() ? Config::Get().GetValue<std::string>("device.label", "pi-audio-node") + " sender" : sLabel;
     js["description"] = "";
     js["tags"] = json::object();
     js["flow_id"] = m_sFlowId;

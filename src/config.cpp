@@ -30,6 +30,7 @@ namespace
                 {"alsa_device", "default:CARD=sndrpihifiberry"}
             }},
             {"sender", {
+                {"label", ""},                      //empty = "<device label> sender"
                 {"enabled", false},
                 {"source", "tone"},                 //tone | sweep | file
                 {"tone_hz", 440.0},
