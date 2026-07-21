@@ -52,7 +52,6 @@ bool WebServer::Start(int nPort, const std::string& sWebRoot, const std::string&
         "document_root", sWebRoot.c_str(),
         "num_threads", "6",
         "enable_directory_listing", "no",
-        "static_file_max_age", "0",     //ui updates reach kiosk browsers without a manual reload
         nullptr
     };
     m_pServer = mg_start(nullptr, nullptr, options);

@@ -160,6 +160,7 @@ int main(int argc, char** argv)
     {
         json js;
         js["version"] = APP_VERSION;
+        js["build"] = __DATE__ " " __TIME__;    //ui reloads itself when this changes
         js["ptp"] = ptpClient.GetStatusJson();
         js["sender"] = sender.GetStatusJson();
         js["receiver"] = receiver.GetStatusJson();

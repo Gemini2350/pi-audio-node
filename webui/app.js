@@ -57,7 +57,13 @@ function connectWs() {
 }
 
 /* ---------- render ---------- */
+let buildSeen = null;
 function render() {
+    /* the kiosk browser never reloads on its own - pick up new ui builds */
+    if (status.build) {
+        if (buildSeen && status.build !== buildSeen) { location.reload(); return; }
+        buildSeen = status.build;
+    }
     const ptp = status.ptp || {};
     const rx = status.receiver || {};
     const tx = status.sender || {};
