@@ -81,18 +81,18 @@ bool AlsaOut::Write(const float* pInterleaved, size_t nFrames, double dGainDb)
     if(!m_pPcm) { return false; }
 
     float fGain = static_cast<float>(pow(10.0, dGainDb/20.0));
-    std::vector<int32_t> vSamples(nFrames*2);
+    if(m_vConvert.size() < nFrames*2) { m_vConvert.resize(nFrames*2); }
     for(size_t i = 0; i < nFrames*2; i++)
     {
         float f = pInterleaved[i] * fGain;
         f = std::clamp(f, -1.0f, 1.0f);
-        vSamples[i] = static_cast<int32_t>(f * 2147483392.0f);
+        m_vConvert[i] = static_cast<int32_t>(f * 2147483392.0f);
     }
 
     size_t nWritten = 0;
     while(nWritten < nFrames)
     {
-        auto nResult = snd_pcm_writei(m_pPcm, vSamples.data()+nWritten*2, nFrames-nWritten);
+        auto nResult = snd_pcm_writei(m_pPcm, m_vConvert.data()+nWritten*2, nFrames-nWritten);
         if(nResult < 0)
         {
             m_nUnderruns++;

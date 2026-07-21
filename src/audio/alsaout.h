@@ -2,6 +2,7 @@
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <vector>
 
 typedef struct _snd_pcm snd_pcm_t;
 
@@ -28,5 +29,6 @@ namespace pan::audio
             std::mutex m_mutex;
             snd_pcm_t* m_pPcm = nullptr;
             std::atomic<uint64_t> m_nUnderruns{0};
+            std::vector<int32_t> m_vConvert;    //reused: tiny ptimes mean 8k writes/s
     };
 }

@@ -427,9 +427,17 @@ $("rx-connect").onclick = () => {
 };
 $("rx-disconnect").onclick = () => api("/api/action/receiver-disconnect", "POST", {});
 let gainTouchedAt = 0;
+let gainSendTimer = null;
 $("rx-gain").oninput = () => {
     gainTouchedAt = Date.now();
     $("rx-gain-val").textContent = $("rx-gain").value + " dB";
+    /* apply while dragging, throttled - the final value goes out in onchange */
+    if (!gainSendTimer) {
+        gainSendTimer = setTimeout(() => {
+            gainSendTimer = null;
+            api("/api/config", "POST", {"receiver.gain_db": parseFloat($("rx-gain").value)}).catch(() => {});
+        }, 120);
+    }
 };
 $("rx-gain").onchange = () => setConfig({"receiver.gain_db": parseFloat($("rx-gain").value)});
 

@@ -139,8 +139,9 @@ void RtpSender::SendLoop()
     std::vector<uint8_t> vPacket(12 + nPayloadBytes);
 
     //sleep to just before the deadline, spin the last stretch - the absolute
-    //wakeup alone is only good to a few tens of microseconds
-    constexpr int64_t SPIN_NS = 100'000;
+    //wakeup alone is only good to a few tens of microseconds. capped to a
+    //quarter of the packet time so tiny ptimes do not turn into busy loops
+    const int64_t SPIN_NS = std::min<int64_t>(100'000, static_cast<int64_t>(m_nPacketTimeUs) * 250);
 
     //anchor: packet n leaves at ptp time nStartNs + n*ptime, rtp timestamp is
     //the ptp media clock (samples since ptp epoch, mediaclk:direct=0)
