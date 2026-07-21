@@ -115,7 +115,7 @@ int ConnectionApi::Handle(mg_connection* pConn)
     if(sUri == sSender)                  { SendJson(pConn, 200, json::array({"constraints/", "staged/", "active/", "transporttype/", "transportfile/"})); }
     else if(sUri == sSender+"/constraints")  { SendJson(pConn, 200, BuildConstraints(m_jsSenderStaged["transport_params"].size())); }
     else if(sUri == sSender+"/transporttype"){ SendJson(pConn, 200, json("urn:x-nmos:transport:rtp.mcast")); }
-    else if(sUri == sSender+"/active")       { SendJson(pConn, 200, m_jsSenderActive); }
+    else if(sUri == sSender+"/active")       { SendJson(pConn, 200, SenderActiveNow()); }
     else if(sUri == sSender+"/transportfile")
     {
         auto session = m_node.Sender().DescribeSession();
@@ -150,6 +150,40 @@ int ConnectionApi::Handle(mg_connection* pConn)
     }
     else { SendJson(pConn, 404, {{"code", 404}, {"error", "not found"}}); }
     return 200;
+}
+
+json ConnectionApi::SenderActiveNow() const
+{
+    //caller holds m_mutex. the sender can be driven from the web ui as well, so
+    //the is-05 active endpoint reflects the actual engine state, not only what
+    //an is-05 activation last wrote
+    json js = m_jsSenderActive;
+    auto& sender = m_node.Sender();
+    js["master_enable"] = sender.IsRunning();
+
+    auto jsStatus = sender.GetStatusJson();
+    auto vIps = sender.GetSourceIps();
+    const auto& jsLegs = jsStatus["legs"];
+    auto& jsParams = js["transport_params"];
+    for(size_t i = 0; i < jsParams.size(); i++)
+    {
+        if(sender.IsRunning() && i < jsLegs.size())
+        {
+            jsParams[i]["source_ip"] = i < vIps.size() ? json(vIps[i]) : json();
+            jsParams[i]["destination_ip"] = jsLegs[i]["multicast"];
+            jsParams[i]["destination_port"] = jsLegs[i]["port"];
+            jsParams[i]["rtp_enabled"] = true;
+        }
+        else
+        {
+            //not running - show the configured destinations
+            jsParams[i]["destination_ip"] = Config::Get().GetValue<std::string>(
+                i == 0 ? "sender.multicast_primary" : "sender.multicast_secondary", "");
+            jsParams[i]["destination_port"] = Config::Get().GetValue<int>("sender.port", 5004);
+            jsParams[i]["rtp_enabled"] = sender.IsRunning();
+        }
+    }
+    return js;
 }
 
 void ConnectionApi::PatchSender(const json& jsPatch)

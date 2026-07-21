@@ -31,6 +31,7 @@ namespace pan::nmos
             int Handle(mg_connection* pConn);
             nlohmann::json BuildStaged(bool bSender) const;
             nlohmann::json BuildActive(bool bSender) const;
+            nlohmann::json SenderActiveNow() const;
             nlohmann::json BuildConstraints(size_t nLegs) const;
             void PatchSender(const nlohmann::json& jsPatch);
             void PatchReceiver(const nlohmann::json& jsPatch);

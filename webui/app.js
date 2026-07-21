@@ -197,6 +197,13 @@ $("tx-start").onclick = () => setConfig({
     "sender.port": parseInt($("tx-port").value, 10)
 });
 $("tx-stop").onclick = () => setConfig({"sender.enabled": false});
+$("tx-show-sdp").onclick = async () => {
+    const result = await api("/api/action/sender-sdp", "POST", {});
+    $("tx-sdp").textContent = result.sdp || result.error || "sender is not running";
+    $("tx-sdp").style.display = "";
+    $("tx-copy-sdp").style.display = result.sdp ? "" : "none";
+};
+$("tx-copy-sdp").onclick = () => navigator.clipboard.writeText($("tx-sdp").textContent);
 $("tx-upload").onchange = async () => {
     const file = $("tx-upload").files[0];
     if (!file) return;

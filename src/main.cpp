@@ -136,6 +136,13 @@ int main(int argc, char** argv)
             json jsPatch = {{"master_enable", false}, {"activation", {{"mode", "activate_immediate"}}}};
             nmos::HttpJson("PATCH", sBase, &jsPatch, nStatus);
         }
+        else if(sAction == "sender-sdp")
+        {
+            auto session = sender.DescribeSession();
+            if(session.vLegs.empty()) { return {{"error", "sender is not running"}}; }
+            auto vIps = sender.GetSourceIps();
+            return {{"sdp", rtp::GenerateSdp(session, vIps.empty() ? "0.0.0.0" : vIps[0], vIps)}};
+        }
         return {{"status", nStatus}};
     };
 
