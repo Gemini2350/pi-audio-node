@@ -298,6 +298,14 @@ json NmosNode::BuildReceiver() const
     js["interface_bindings"] = m_vInterfaces;
     js["format"] = "urn:x-nmos:format:audio";
     js["caps"]["media_types"] = {"audio/L24", "audio/L16"};
+    //bcp-004-01: tell strict controllers what this receiver really accepts
+    json jsConstraints;
+    jsConstraints["urn:x-nmos:cap:format:media_type"] = {{"enum", {"audio/L24", "audio/L16"}}};
+    jsConstraints["urn:x-nmos:cap:format:sample_rate"] = {{"enum", json::array({{{"numerator", 48000}}})}};
+    jsConstraints["urn:x-nmos:cap:format:channel_count"] = {{"minimum", 1}, {"maximum", 8}};
+    jsConstraints["urn:x-nmos:cap:transport:packet_time"] = {{"minimum", 0.125}, {"maximum", 4.0}};
+    js["caps"]["constraint_sets"] = json::array({jsConstraints});
+    js["caps"]["version"] = Version();
     js["subscription"] = {{"sender_id", m_pConnection ? m_pConnection->ReceiverSenderId() : json()},
                           {"active", m_receiver.IsRunning()}};
     return js;
