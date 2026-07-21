@@ -5,6 +5,8 @@
 #include <cstring>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <pthread.h>
+#include <sched.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include "audio/alsaout.h"
@@ -17,6 +19,16 @@ using json = nlohmann::json;
 namespace
 {
     constexpr int SAMPLE_RATE = 48000;
+
+    void SetRealtime(int nPriority)
+    {
+        sched_param sp{};
+        sp.sched_priority = nPriority;
+        if(pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0)
+        {
+            LOG_WARN("rtprx") << "no realtime priority (cap_sys_nice missing?) - low playout delays may underrun";
+        }
+    }
 
     int OpenLegSocket(const std::string& sInterface, const std::string& sMulticast, uint16_t nPort)
     {
@@ -124,6 +136,7 @@ bool RtpReceiver::Configure(const SdpSession& session, const std::vector<std::st
 
 void RtpReceiver::RxLoop()
 {
+    SetRealtime(52);        //above playout - arrivals must land in the slots first
     std::vector<uint8_t> vBuffer(4096);
     while(m_bRun)
     {
@@ -225,6 +238,7 @@ void RtpReceiver::HandlePacket(size_t nLeg, const uint8_t* pData, size_t nSize)
 
 void RtpReceiver::PlayoutLoop()
 {
+    SetRealtime(51);
     //wait for the first packet
     while(m_bRun && !m_bHaveFirst)
     {
@@ -237,7 +251,9 @@ void RtpReceiver::PlayoutLoop()
     //non-ptp streams (or no sync) just start with the configured buffer depth.
     if(m_ptp.IsSynced())
     {
-        uint64_t nPtpSamples = static_cast<uint64_t>(m_ptp.PtpTimeNs() / 1000000ULL) * SAMPLE_RATE / 1000;
+        uint64_t nPtpNs = m_ptp.PtpTimeNs();
+        uint64_t nPtpSamples = (nPtpNs / 1000000000ULL) * SAMPLE_RATE
+                             + (nPtpNs % 1000000000ULL) * SAMPLE_RATE / 1000000000ULL;
         auto nAge = static_cast<int32_t>(static_cast<uint32_t>(nPtpSamples) - m_nFirstTs.load());
         int32_t nWaitSamples = m_nPlayoutDelayMs * SAMPLE_RATE / 1000 - nAge;
         if(nWaitSamples > 0 && nWaitSamples < SAMPLE_RATE)

@@ -25,16 +25,47 @@ bool AlsaOut::Open(const std::string& sDevice)
         return false;
     }
 
-    nError = snd_pcm_set_params(m_pPcm, SND_PCM_FORMAT_S32_LE, SND_PCM_ACCESS_RW_INTERLEAVED,
-                                2, 48000, 1 /*allow resample*/, 100000 /*100 ms buffer*/);
+    //explicit hw params: small periods keep snd_pcm_delay fine grained enough
+    //to steer low playout delays (5-10 ms); the buffer size is only headroom
+    snd_pcm_hw_params_t* pHw;
+    snd_pcm_hw_params_alloca(&pHw);
+    snd_pcm_hw_params_any(m_pPcm, pHw);
+    snd_pcm_hw_params_set_rate_resample(m_pPcm, pHw, 1);
+    snd_pcm_hw_params_set_access(m_pPcm, pHw, SND_PCM_ACCESS_RW_INTERLEAVED);
+    snd_pcm_hw_params_set_format(m_pPcm, pHw, SND_PCM_FORMAT_S32_LE);
+    snd_pcm_hw_params_set_channels(m_pPcm, pHw, 2);
+    unsigned int nRate = 48000;
+    snd_pcm_uframes_t nPeriod = 96;         //2 ms
+    snd_pcm_uframes_t nBuffer = 4800;       //100 ms headroom
+    snd_pcm_hw_params_set_rate_near(m_pPcm, pHw, &nRate, nullptr);
+    snd_pcm_hw_params_set_period_size_near(m_pPcm, pHw, &nPeriod, nullptr);
+    snd_pcm_hw_params_set_buffer_size_near(m_pPcm, pHw, &nBuffer);
+    nError = snd_pcm_hw_params(m_pPcm, pHw);
     if(nError < 0)
     {
-        LOG_ERROR("alsa") << "set_params: " << snd_strerror(nError);
-        snd_pcm_close(m_pPcm);
-        m_pPcm = nullptr;
-        return false;
+        //fall back to the generic setup for devices that reject the layout
+        LOG_WARN("alsa") << "explicit hw params failed (" << snd_strerror(nError) << ") - using defaults";
+        nError = snd_pcm_set_params(m_pPcm, SND_PCM_FORMAT_S32_LE, SND_PCM_ACCESS_RW_INTERLEAVED,
+                                    2, 48000, 1 /*allow resample*/, 100000 /*100 ms buffer*/);
+        if(nError < 0)
+        {
+            LOG_ERROR("alsa") << "set_params: " << snd_strerror(nError);
+            snd_pcm_close(m_pPcm);
+            m_pPcm = nullptr;
+            return false;
+        }
     }
-    LOG_INFO("alsa") << "playback open on '" << sDevice << "'";
+    else
+    {
+        //start as soon as the anchor burst is queued, not when the buffer fills
+        snd_pcm_sw_params_t* pSw;
+        snd_pcm_sw_params_alloca(&pSw);
+        snd_pcm_sw_params_current(m_pPcm, pSw);
+        snd_pcm_sw_params_set_start_threshold(m_pPcm, pSw, nPeriod * 2);
+        snd_pcm_sw_params(m_pPcm, pSw);
+    }
+    LOG_INFO("alsa") << "playback open on '" << sDevice << "' period " << nPeriod
+                     << " buffer " << nBuffer << " frames";
     return true;
 }
 
