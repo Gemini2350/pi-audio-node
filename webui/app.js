@@ -66,7 +66,7 @@ function render() {
          ptp.synced ? "ok" : "warn");
     const gm = (ptp.masters || []).find(m => m.selected);
     $("d-ptp-gm").textContent = gm ? gm.grandmaster : "–";
-    $("d-ptp-offset").textContent = ptp.synced ? fmtNs(ptp.offset_ns) : "–";
+    $("d-ptp-offset").textContent = ptp.synced ? fmtNs(ptp.correction_ns) : "–";
 
     pill($("d-rx-state"), rx.running ? (rx.receiving ? "Receiving" : "No signal") : "Off",
          rx.running ? (rx.receiving ? "ok" : "bad") : "off");
@@ -123,6 +123,19 @@ function render() {
     /* sender page */
     pill($("tx-state"), tx.running ? (tx.essence_ok ? "Sending" : "Source empty") : "Off",
          tx.running ? (tx.essence_ok ? "ok" : "warn") : "off");
+
+    /* transport fields follow config changes made via nmos/is-05,
+       unless the user is editing them right now */
+    const cfg = status.config;
+    if (cfg && Date.now() - cfgTouchedAt > 1500) {
+        config = cfg;
+        const sync = (el, v) => { if (document.activeElement !== el && el.value != v) el.value = v; };
+        sync($("tx-mc1"), cfg.sender.multicast_primary);
+        sync($("tx-mc2"), cfg.sender.multicast_secondary);
+        sync($("tx-port"), cfg.sender.port);
+        if (document.activeElement !== $("tx-leg1")) $("tx-leg1").checked = cfg.sender.leg1_enabled !== false;
+        if (document.activeElement !== $("tx-leg2")) $("tx-leg2").checked = cfg.sender.leg2_enabled !== false;
+    }
     $("tx-stats").innerHTML =
         `<tr><td>Packets</td><td>${tx.packets_sent || 0}</td></tr>
          <tr><td>Send errors</td><td>${tx.send_errors || 0}</td></tr>
@@ -134,7 +147,7 @@ function render() {
     /* ptp page */
     pill($("ptp-state"), ptp.synced ? "Locked" : "Not synced", ptp.synced ? "ok" : "warn");
     $("ptp-identity").textContent = ptp.identity || "–";
-    $("ptp-offset").textContent = fmtNs(ptp.offset_ns);
+    $("ptp-offset").textContent = ptp.synced ? fmtNs(ptp.correction_ns) : "–";
     $("ptp-delay").textContent = fmtNs(ptp.mean_path_delay_ns);
     const tbody = $("ptp-masters").querySelector("tbody");
     tbody.innerHTML = (ptp.masters || []).map(m =>
@@ -212,8 +225,10 @@ $("tx-start").onclick = () => setConfig({
     "sender.port": parseInt($("tx-port").value, 10)
 });
 $("tx-stop").onclick = () => setConfig({"sender.enabled": false});
-$("tx-leg1").onchange = () => setConfig({"sender.leg1_enabled": $("tx-leg1").checked});
-$("tx-leg2").onchange = () => setConfig({"sender.leg2_enabled": $("tx-leg2").checked});
+let cfgTouchedAt = 0;
+["tx-mc1", "tx-mc2", "tx-port"].forEach(id => { $(id).oninput = () => { cfgTouchedAt = Date.now(); }; });
+$("tx-leg1").onchange = () => { cfgTouchedAt = Date.now(); setConfig({"sender.leg1_enabled": $("tx-leg1").checked}); };
+$("tx-leg2").onchange = () => { cfgTouchedAt = Date.now(); setConfig({"sender.leg2_enabled": $("tx-leg2").checked}); };
 $("tx-show-sdp").onclick = async () => {
     const result = await api("/api/action/sender-sdp", "POST", {});
     $("tx-sdp").textContent = result.sdp || result.error || "sender is not running";

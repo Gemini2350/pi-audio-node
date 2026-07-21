@@ -117,6 +117,7 @@ int main(int argc, char** argv)
         js["sender"] = sender.GetStatusJson();
         js["receiver"] = receiver.GetStatusJson();
         js["receiver"]["gain_db"] = Config::Get().GetValue<double>("receiver.gain_db", 0.0);
+        js["config"] = Config::Get().GetJson();     //ui forms follow is-05/config changes
         js["nmos"] = node.GetStatusJson();
         js["alsa"] = {{"underruns", alsa.Underruns()}, {"delay_frames", alsa.DelayFrames()}};
         if(auto* pIs12 = node.GetIs12()) { js["monitors"] = pIs12->GetMonitorJson(); }

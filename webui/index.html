@@ -24,7 +24,7 @@
         <div class="card">
             <h2>PTP <span class="pill" id="d-ptp-state">–</span></h2>
             <div class="big" id="d-ptp-gm">–</div>
-            <div class="sub">Grandmaster · clock offset <span id="d-ptp-offset">–</span></div>
+            <div class="sub">Grandmaster · correction <span id="d-ptp-offset">–</span></div>
         </div>
         <div class="card">
             <h2>Receiver <span class="pill" id="d-rx-state">–</span></h2>
@@ -139,7 +139,7 @@
             <h2>Analyzer <span class="pill" id="ptp-state">–</span>
                 <label class="inline right">Domain <input type="number" id="ptp-domain" min="0" max="127" style="width:4em"></label>
             </h2>
-            <div class="sub">Own identity: <span id="ptp-identity">–</span> · clock offset <span id="ptp-offset">–</span> · path delay <span id="ptp-delay">–</span></div>
+            <div class="sub">Own identity: <span id="ptp-identity">–</span> · correction <span id="ptp-offset">–</span> · path delay <span id="ptp-delay">–</span></div>
             <table class="masters" id="ptp-masters">
                 <thead><tr>
                     <th>BMCA</th><th>Source</th><th>Grandmaster</th><th>P1</th><th>Class</th><th>Acc</th><th>Var</th><th>P2</th><th>Steps</th><th>Ann</th><th>Decision</th>
@@ -148,7 +148,7 @@
             </table>
         </div>
         <div class="card wide">
-            <h2>Offset history <span class="sub">(ns, around the mean)</span></h2>
+            <h2>Correction history <span class="sub">(ns, around the mean)</span></h2>
             <canvas id="ptp-chart" height="120"></canvas>
         </div>
     </div>
