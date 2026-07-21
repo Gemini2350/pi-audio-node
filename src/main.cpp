@@ -117,8 +117,7 @@ int main(int argc, char** argv)
 
     //---- engine ----
     ptp::PtpClient ptpClient;
-    ptpClient.Run(Config::Get().GetValue<std::string>("network.interface_primary", "eth0"),
-                  Config::Get().GetValue<int>("ptp.domain", 0));
+    ptpClient.Run(Interfaces(), Config::Get().GetValue<int>("ptp.domain", 0));
 
     audio::AlsaOut alsa;
     alsa.Open(Config::Get().GetValue<std::string>("receiver.alsa_device", "default"));

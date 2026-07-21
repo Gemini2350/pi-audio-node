@@ -376,6 +376,7 @@ json RtpReceiver::GetStatusJson() const
     js["channels"] = m_session.nChannels;
     js["bits"] = m_session.nBitsPerSample;
     js["playout_delay_ms"] = m_nPlayoutDelayMs;
+    js["critical_ms"] = 2.0 * m_nFramesPerPacket * 1000.0 / 48000.0;    //below this the playout conceals
     js["buffer_history"] = json::array();
     for(const auto& sample : m_qBufferHistory)
     {

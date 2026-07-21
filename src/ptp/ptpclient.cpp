@@ -81,23 +81,26 @@ PtpClient::~PtpClient()
     Stop();
 }
 
-bool PtpClient::Run(const std::string& sInterface, int nDomain)
+bool PtpClient::Run(const std::vector<std::string>& vInterfaces, int nDomain)
 {
     Stop();
-    m_sInterface = sInterface;
+    if(vInterfaces.empty()) { return false; }
+    m_vInterfaces = vInterfaces;
+    if(m_vInterfaces.size() > 2) { m_vInterfaces.resize(2); }
     m_nDomain = nDomain;
 
     if(!OpenSockets())
     {
-        LOG_ERROR("ptp") << "could not open sockets on " << sInterface;
+        LOG_ERROR("ptp") << "could not open sockets on " << m_vInterfaces[0];
         return false;
     }
 
     m_bRun = true;
     m_rxThread = std::thread(&PtpClient::RxLoop, this);
     m_timerThread = std::thread(&PtpClient::TimerLoop, this);
-    LOG_INFO("ptp") << "running on " << sInterface << " domain " << nDomain
-                    << " identity " << IdentityToString(m_ownIdentity);
+    LOG_INFO("ptp") << "running on " << m_vInterfaces[0]
+                    << (m_vInterfaces.size() > 1 ? " (announce monitor on " + m_vInterfaces[1] + ")" : "")
+                    << " domain " << nDomain << " identity " << IdentityToString(m_ownIdentity);
     return true;
 }
 
@@ -124,12 +127,9 @@ void PtpClient::SetDomain(int nDomain)
 
 bool PtpClient::OpenSockets()
 {
-    int nIfIndex = if_nametoindex(m_sInterface.c_str());
-    if(nIfIndex == 0) { return false; }
-
-    //clock identity from the interface mac (EUI-64 style)
+    //clock identity from the primary interface mac (EUI-64 style)
     ifreq ifr{};
-    strncpy(ifr.ifr_name, m_sInterface.c_str(), IFNAMSIZ-1);
+    strncpy(ifr.ifr_name, m_vInterfaces[0].c_str(), IFNAMSIZ-1);
     int nTemp = socket(AF_INET, SOCK_DGRAM, 0);
     if(nTemp >= 0 && ioctl(nTemp, SIOCGIFHWADDR, &ifr) == 0)
     {
@@ -138,32 +138,58 @@ bool PtpClient::OpenSockets()
     }
     if(nTemp >= 0) { close(nTemp); }
 
-    m_nEventSocket = OpenPtpSocket(PORT_EVENT, m_sInterface, nIfIndex);
-    m_nGeneralSocket = OpenPtpSocket(PORT_GENERAL, m_sInterface, nIfIndex);
-    return m_nEventSocket >= 0 && m_nGeneralSocket >= 0;
+    for(size_t nIf = 0; nIf < m_vInterfaces.size(); nIf++)
+    {
+        int nIfIndex = if_nametoindex(m_vInterfaces[nIf].c_str());
+        if(nIfIndex == 0)
+        {
+            if(nIf == 0) { return false; }
+            LOG_WARN("ptp") << "secondary interface " << m_vInterfaces[nIf] << " not found - amber only";
+            continue;
+        }
+        m_anEventSocket[nIf] = OpenPtpSocket(PORT_EVENT, m_vInterfaces[nIf], nIfIndex);
+        m_anGeneralSocket[nIf] = OpenPtpSocket(PORT_GENERAL, m_vInterfaces[nIf], nIfIndex);
+        if(nIf == 0 && (m_anEventSocket[0] < 0 || m_anGeneralSocket[0] < 0)) { return false; }
+    }
+    return true;
 }
 
 void PtpClient::CloseSockets()
 {
-    for(int* pSocket : {&m_nEventSocket, &m_nGeneralSocket})
+    for(auto* pSockets : {&m_anEventSocket, &m_anGeneralSocket})
     {
-        if(*pSocket >= 0) { close(*pSocket); *pSocket = -1; }
+        for(int& nSocket : *pSockets)
+        {
+            if(nSocket >= 0) { close(nSocket); nSocket = -1; }
+        }
     }
 }
 
 void PtpClient::RxLoop()
 {
+    //socket -> owning interface for the per-net announce bookkeeping
+    std::vector<std::pair<int, size_t>> vSockets;
+    for(size_t nIf = 0; nIf < 2; nIf++)
+    {
+        if(m_anEventSocket[nIf] >= 0) { vSockets.emplace_back(m_anEventSocket[nIf], nIf); }
+        if(m_anGeneralSocket[nIf] >= 0) { vSockets.emplace_back(m_anGeneralSocket[nIf], nIf); }
+    }
+
     while(m_bRun)
     {
         fd_set fds;
         FD_ZERO(&fds);
-        FD_SET(m_nEventSocket, &fds);
-        FD_SET(m_nGeneralSocket, &fds);
+        int nMax = -1;
+        for(const auto& [nSocket, nIf] : vSockets)
+        {
+            FD_SET(nSocket, &fds);
+            nMax = std::max(nMax, nSocket);
+        }
         timeval tv{0, 200000};
-        int nReady = select(std::max(m_nEventSocket, m_nGeneralSocket)+1, &fds, nullptr, nullptr, &tv);
+        int nReady = select(nMax+1, &fds, nullptr, nullptr, &tv);
         if(nReady <= 0) { continue; }
 
-        for(int nSocket : {m_nEventSocket, m_nGeneralSocket})
+        for(const auto& [nSocket, nInterface] : vSockets)
         {
             if(!FD_ISSET(nSocket, &fds)) { continue; }
 
@@ -195,12 +221,13 @@ void PtpClient::RxLoop()
 
             char sFrom[INET_ADDRSTRLEN] = {0};
             inet_ntop(AF_INET, &from.sin_addr, sFrom, sizeof(sFrom));
-            HandleMessage(buffer, static_cast<size_t>(nSize), nRxNs, sFrom);
+            HandleMessage(buffer, static_cast<size_t>(nSize), nRxNs, sFrom, nInterface);
         }
     }
 }
 
-void PtpClient::HandleMessage(const uint8_t* pData, size_t nSize, uint64_t nRxNs, const std::string& sFrom)
+void PtpClient::HandleMessage(const uint8_t* pData, size_t nSize, uint64_t nRxNs,
+                              const std::string& sFrom, size_t nInterface)
 {
     uint8_t nType = pData[0] & 0x0f;
     uint8_t nVersion = pData[1] & 0x0f;
@@ -210,9 +237,16 @@ void PtpClient::HandleMessage(const uint8_t* pData, size_t nSize, uint64_t nRxNs
     //ignore our own transmissions
     if(memcmp(pData+20, m_ownIdentity.data(), 8) == 0) { return; }
 
+    //announces feed the per-net comparison; the clock itself only follows
+    //messages on the primary interface
+    if(nType == ANNOUNCE)
+    {
+        HandleAnnounce(pData, nSize, sFrom, nInterface);
+        return;
+    }
+    if(nInterface != 0) { return; }
     switch(nType)
     {
-        case ANNOUNCE:   HandleAnnounce(pData, nSize, sFrom); break;
         case SYNC:       HandleSync(pData, nSize, nRxNs); break;
         case FOLLOW_UP:  HandleFollowUp(pData, nSize); break;
         case DELAY_RESP: HandleDelayResp(pData, nSize); break;
@@ -220,7 +254,7 @@ void PtpClient::HandleMessage(const uint8_t* pData, size_t nSize, uint64_t nRxNs
     }
 }
 
-void PtpClient::HandleAnnounce(const uint8_t* pData, size_t nSize, const std::string& sFrom)
+void PtpClient::HandleAnnounce(const uint8_t* pData, size_t nSize, const std::string& sFrom, size_t nInterface)
 {
     if(nSize < 64) { return; }
 
@@ -245,16 +279,28 @@ void PtpClient::HandleAnnounce(const uint8_t* pData, size_t nSize, const std::st
 
     std::lock_guard<std::mutex> lg(m_mutex);
     auto& foreign = m_mForeign[ds.source];
-    if(foreign.nAnnounceCount == 0)
+    if(foreign.aAnnounceCount[0] + foreign.aAnnounceCount[1] == 0)
     {
         foreign.firstSeen = std::chrono::steady_clock::now();
         LOG_INFO("ptp") << "new announce source " << IdentityToString(ds.source.clockIdentity)
-                        << " gm " << IdentityToString(ds.grandmasterIdentity) << " from " << sFrom;
+                        << " gm " << IdentityToString(ds.grandmasterIdentity) << " from " << sFrom
+                        << " (" << (nInterface == 0 ? "amber" : "blue") << ")";
     }
-    foreign.dataset = ds;
-    foreign.nAnnounceCount++;
+    foreign.aAnnounceCount[nInterface]++;
+    foreign.aDataset[nInterface] = ds;
     foreign.lastSeen = std::chrono::steady_clock::now();
-    foreign.sAddress = sFrom;
+    if(nInterface == 0)
+    {
+        foreign.dataset = ds;
+        foreign.nAnnounceCount++;
+        foreign.sAddress = sFrom;
+    }
+    else if(foreign.nAnnounceCount == 0)
+    {
+        //only seen on blue so far - show its data in the table anyway
+        foreign.dataset = ds;
+        foreign.sAddress = sFrom;
+    }
     RunBmca();
 }
 
@@ -278,6 +324,10 @@ void PtpClient::RunBmca()
         if(foreign.bSelected)
         {
             foreign.sBmcaInfo = "selected";
+        }
+        else if(foreign.nAnnounceCount == 0 && foreign.aAnnounceCount[1] > 0)
+        {
+            foreign.sBmcaInfo = "only on blue - not eligible";
         }
         else if(foreign.nAnnounceCount < 2)
         {
@@ -402,7 +452,7 @@ void PtpClient::SendDelayReq()
     dest.sin_family = AF_INET;
     dest.sin_port = htons(PORT_EVENT);
     inet_pton(AF_INET, PTP_GROUP, &dest.sin_addr);
-    sendto(m_nEventSocket, buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr*>(&dest), sizeof(dest));
+    sendto(m_anEventSocket[0], buffer, sizeof(buffer), 0, reinterpret_cast<sockaddr*>(&dest), sizeof(dest));
 }
 
 void PtpClient::HandleDelayResp(const uint8_t* pData, size_t nSize)
@@ -496,7 +546,7 @@ json PtpClient::GetStatusJson() const
     std::lock_guard<std::mutex> lg(m_mutex);
     json js;
     js["domain"] = m_nDomain.load();
-    js["interface"] = m_sInterface;
+    js["interface"] = m_vInterfaces.empty() ? "" : m_vInterfaces[0];
     js["identity"] = IdentityToString(m_ownIdentity);
     js["synced"] = m_bSynced.load();
     js["sync_count"] = m_nSyncCount;
@@ -529,8 +579,45 @@ json PtpClient::GetStatusJson() const
             {"announces", foreign.nAnnounceCount},
             {"seen_seconds", age},
             {"selected", foreign.bSelected},
-            {"bmca", foreign.sBmcaInfo}
+            {"bmca", foreign.sBmcaInfo},
+            {"nets", {{"amber", foreign.aAnnounceCount[0]}, {"blue", foreign.aAnnounceCount[1]}}},
+            //datasets from both nets should describe the same clock identically
+            {"net_match", foreign.aAnnounceCount[0] == 0 || foreign.aAnnounceCount[1] == 0 ? json()
+                : json(CompareDatasets(foreign.aDataset[0], foreign.aDataset[1]).nResult == 0
+                       && foreign.aDataset[0].nUtcOffset == foreign.aDataset[1].nUtcOffset)}
         });
+    }
+
+    //meta bmca: best qualified master per net - both nets should agree on the gm
+    if(m_vInterfaces.size() > 1)
+    {
+        const AnnounceDataset* apBest[2] = {nullptr, nullptr};
+        for(size_t nIf = 0; nIf < 2; nIf++)
+        {
+            for(const auto& [id, foreign] : m_mForeign)
+            {
+                if(foreign.aAnnounceCount[nIf] < 2) { continue; }
+                if(!apBest[nIf] || CompareDatasets(foreign.aDataset[nIf], *apBest[nIf]).nResult < 0)
+                {
+                    apBest[nIf] = &foreign.aDataset[nIf];
+                }
+            }
+        }
+        json jsMeta;
+        jsMeta["amber_gm"] = apBest[0] ? IdentityToString(apBest[0]->grandmasterIdentity) : "";
+        jsMeta["blue_gm"] = apBest[1] ? IdentityToString(apBest[1]->grandmasterIdentity) : "";
+        if(apBest[0] && apBest[1])
+        {
+            auto cmp = CompareDatasets(*apBest[0], *apBest[1]);
+            jsMeta["match"] = apBest[0]->grandmasterIdentity == apBest[1]->grandmasterIdentity;
+            jsMeta["detail"] = cmp.nResult == 0 ? "" : "differs on " + cmp.sDecidingField;
+        }
+        else
+        {
+            jsMeta["match"] = json();
+            jsMeta["detail"] = apBest[0] ? "no ptp on blue" : (apBest[1] ? "no ptp on amber" : "no ptp on either net");
+        }
+        js["meta"] = jsMeta;
     }
 
     js["offset_history"] = json::array();

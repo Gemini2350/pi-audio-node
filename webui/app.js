@@ -114,7 +114,7 @@ function render() {
         $("rx-gain-val").textContent = rx.gain_db + " dB";
     }
 
-    drawBufferChart(rx.buffer_history || [], rx.playout_delay_ms || 20, rx.running && rx.receiving);
+    drawBufferChart(rx.buffer_history || [], rx.critical_ms || 2, rx.running && rx.receiving);
 
     $("rx-stats").innerHTML =
         `<tr><td>Played</td><td>${rx.played || 0}</td></tr>
@@ -155,6 +155,17 @@ function render() {
     $("ptp-identity").textContent = ptp.identity || "–";
     $("ptp-offset").textContent = ptp.synced ? fmtNs(ptp.correction_ns) : "–";
     $("ptp-delay").textContent = fmtNs(ptp.mean_path_delay_ns);
+    /* meta bmca: do amber and blue agree on the grandmaster? */
+    const meta = ptp.meta;
+    $("ptp-meta").style.display = meta ? "" : "none";
+    if (meta) {
+        const ok = meta.match === true;
+        $("ptp-meta").innerHTML = `Meta BMCA: <span class="pill amber">A</span> ${esc(meta.amber_gm) || "–"}
+            · <span class="pill blue">B</span> ${esc(meta.blue_gm) || "–"}
+            <span class="pill ${meta.match === null ? "warn" : ok ? "ok" : "bad"}">${
+                meta.match === null ? esc(meta.detail) : ok ? (meta.detail ? "same GM · " + esc(meta.detail) : "match") : "GM MISMATCH"}</span>`;
+    }
+
     const tbody = $("ptp-masters").querySelector("tbody");
     tbody.innerHTML = (ptp.masters || []).map(m =>
         `<tr class="${m.selected ? "selected" : ""}">
@@ -163,13 +174,17 @@ function render() {
          <td>${m.grandmaster}</td>
          <td>${m.priority1}</td><td>${m.clock_class}</td><td>0x${m.clock_accuracy.toString(16)}</td>
          <td>0x${m.variance.toString(16)}</td><td>${m.priority2}</td><td>${m.steps_removed}</td>
-         <td>${m.announces}</td><td class="sub">${m.bmca}</td></tr>`).join("")
-        || `<tr><td colspan="11" class="sub">no announce messages on domain ${ptp.domain}</td></tr>`;
+         <td>${m.announces}</td>
+         <td>${m.nets ? (m.nets.amber ? '<span class="pill amber">A</span>' : "") +
+                (m.nets.blue ? ' <span class="pill blue">B</span>' : "") +
+                (m.net_match === false ? ' <span class="pill bad">≠</span>' : "") : ""}</td>
+         <td class="sub">${m.bmca}</td></tr>`).join("")
+        || `<tr><td colspan="12" class="sub">no announce messages on domain ${ptp.domain}</td></tr>`;
     drawChart(ptp.offset_history || []);
 }
 
 /* ---------- receiver buffer chart ---------- */
-function drawBufferChart(history, targetMs, live) {
+function drawBufferChart(history, criticalMs, live) {
     const canvas = $("rx-buffer-chart");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -183,7 +198,7 @@ function drawBufferChart(history, targetMs, live) {
         return;
     }
 
-    const top = Math.max(targetMs * 2, ...history.map(s => s[1])) * 1.1;
+    const top = Math.max(criticalMs * 4, 10, ...history.map(s => s[1])) * 1.1;
     const y = ms => h - 4 - (ms / top) * (h - 20);
     const x = i => i / (history.length - 1) * w;
 
@@ -202,15 +217,17 @@ function drawBufferChart(history, targetMs, live) {
     history.forEach((s, i) => { i ? ctx.lineTo(x(i), y(s[2])) : ctx.moveTo(x(i), y(s[2])); });
     ctx.stroke();
 
-    /* playout delay target */
-    ctx.strokeStyle = "#f1c40f";
+    /* critical line: below this the playout starts concealing */
+    ctx.fillStyle = "rgba(231,76,60,.12)";
+    ctx.fillRect(0, y(criticalMs), w, h - 4 - y(criticalMs));
+    ctx.strokeStyle = "#e74c3c";
     ctx.setLineDash([5, 4]);
-    ctx.beginPath(); ctx.moveTo(0, y(targetMs)); ctx.lineTo(w, y(targetMs)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, y(criticalMs)); ctx.lineTo(w, y(criticalMs)); ctx.stroke();
     ctx.setLineDash([]);
 
     const last = history[history.length - 1];
-    ctx.fillStyle = "#f1c40f";
-    ctx.fillText("target " + targetMs + " ms", 6, y(targetMs) - 5);
+    ctx.fillStyle = "#e74c3c";
+    ctx.fillText("critical < " + criticalMs.toFixed(0) + " ms", 6, y(criticalMs) - 5);
     ctx.fillStyle = "#8b93a7";
     ctx.fillText("now " + last[2].toFixed(1) + " ms · min " + last[0].toFixed(1) + " · max " + last[1].toFixed(1)
         + " · 30 s window", 6, 14);

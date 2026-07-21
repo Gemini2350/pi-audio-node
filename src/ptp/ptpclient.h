@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <deque>
@@ -27,7 +28,9 @@ namespace pan::ptp
             PtpClient() = default;
             ~PtpClient();
 
-            bool Run(const std::string& sInterface, int nDomain);
+            /** clock sync runs on the first interface; a second one is monitored
+            *   for announces only, so amber and blue ptp can be compared **/
+            bool Run(const std::vector<std::string>& vInterfaces, int nDomain);
             void Stop();
             void SetDomain(int nDomain);        //restarts the session state
 
@@ -45,8 +48,10 @@ namespace pan::ptp
         private:
             struct ForeignMaster
             {
-                AnnounceDataset dataset;
-                uint64_t nAnnounceCount = 0;
+                AnnounceDataset dataset;    //latest from the primary net (fallback: secondary)
+                uint64_t nAnnounceCount = 0;                //primary net - bmca qualification
+                std::array<uint64_t, 2> aAnnounceCount{};   //per interface
+                std::array<AnnounceDataset, 2> aDataset{};  //per interface, for the meta compare
                 std::chrono::steady_clock::time_point lastSeen;
                 std::chrono::steady_clock::time_point firstSeen;
                 std::string sAddress;
@@ -56,8 +61,9 @@ namespace pan::ptp
 
             void RxLoop();
             void TimerLoop();
-            void HandleMessage(const uint8_t* pData, size_t nSize, uint64_t nRxNs, const std::string& sFrom);
-            void HandleAnnounce(const uint8_t* pData, size_t nSize, const std::string& sFrom);
+            void HandleMessage(const uint8_t* pData, size_t nSize, uint64_t nRxNs,
+                               const std::string& sFrom, size_t nInterface);
+            void HandleAnnounce(const uint8_t* pData, size_t nSize, const std::string& sFrom, size_t nInterface);
             void HandleSync(const uint8_t* pData, size_t nSize, uint64_t nRxNs);
             void HandleFollowUp(const uint8_t* pData, size_t nSize);
             void HandleDelayResp(const uint8_t* pData, size_t nSize);
@@ -69,10 +75,10 @@ namespace pan::ptp
             bool OpenSockets();
             void CloseSockets();
 
-            std::string m_sInterface;
+            std::vector<std::string> m_vInterfaces;
             std::atomic<int> m_nDomain{0};
-            int m_nEventSocket = -1;        //319
-            int m_nGeneralSocket = -1;      //320
+            std::array<int, 2> m_anEventSocket{-1, -1};     //319, per interface
+            std::array<int, 2> m_anGeneralSocket{-1, -1};   //320, per interface
             ClockIdentity m_ownIdentity{};
 
             std::thread m_rxThread;
