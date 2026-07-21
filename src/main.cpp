@@ -1,5 +1,8 @@
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <sys/stat.h>
 #include "audio/alsaout.h"
 #include "audio/sources.h"
@@ -27,6 +30,51 @@ namespace
         auto sSecondary = Config::Get().GetValue<std::string>("network.interface_secondary", "");
         if(!sSecondary.empty() && sSecondary != vInterfaces[0]) { vInterfaces.push_back(sSecondary); }
         return vInterfaces;
+    }
+
+    std::string RunCommand(const std::string& sCmd)
+    {
+        std::string sOut;
+        FILE* pPipe = popen((sCmd + " 2>&1").c_str(), "r");
+        if(!pPipe) { return sOut; }
+        char buffer[512];
+        while(fgets(buffer, sizeof(buffer), pPipe)) { sOut += buffer; }
+        pclose(pPipe);
+        return sOut;
+    }
+
+    //nmcli terse output is KEY:value per line (IP4.ADDRESS shows as IP4.ADDRESS[1])
+    std::string NmcliField(const std::string& sOutput, const std::string& sKey)
+    {
+        std::istringstream stream(sOutput);
+        std::string sLine;
+        while(std::getline(stream, sLine))
+        {
+            if(sLine.rfind(sKey, 0) == 0)
+            {
+                auto nColon = sLine.find(':');
+                if(nColon != std::string::npos) { return sLine.substr(nColon+1); }
+            }
+        }
+        return "";
+    }
+
+    bool ValidIp4(const std::string& s, bool bWithPrefix)
+    {
+        int nA, nB, nC, nD, nP;
+        char cEnd;
+        if(bWithPrefix)
+        {
+            if(sscanf(s.c_str(), "%d.%d.%d.%d/%d%c", &nA, &nB, &nC, &nD, &nP, &cEnd) != 5) { return false; }
+            if(nP < 1 || nP > 32) { return false; }
+        }
+        else if(sscanf(s.c_str(), "%d.%d.%d.%d%c", &nA, &nB, &nC, &nD, &cEnd) != 4) { return false; }
+        return nA >= 0 && nA <= 255 && nB >= 0 && nB <= 255 && nC >= 0 && nC <= 255 && nD >= 0 && nD <= 255;
+    }
+
+    bool SafeShellArg(const std::string& s)
+    {
+        return !s.empty() && s.find('\'') == std::string::npos && s.find('\n') == std::string::npos;
     }
 
     void ApplySender(rtp::RtpSender& sender, const std::string& sFilesDir)
@@ -146,6 +194,68 @@ int main(int argc, char** argv)
             if(session.vLegs.empty()) { return {{"error", "sender is not running"}}; }
             auto vIps = sender.GetSourceIps();
             return {{"sdp", rtp::GenerateSdp(session, vIps.empty() ? "0.0.0.0" : vIps[0], vIps)}};
+        }
+        else if(sAction == "network-status")
+        {
+            json jsIfs = json::array();
+            auto vInterfaces = Interfaces();
+            const char* ROLES[] = {"amber", "blue"};
+            for(size_t nRole = 0; nRole < vInterfaces.size() && nRole < 2; nRole++)
+            {
+                const auto& sIf = vInterfaces[nRole];
+                if(!SafeShellArg(sIf)) { continue; }
+                auto sInfo = RunCommand("nmcli -t -f GENERAL.CONNECTION,IP4.ADDRESS,IP4.GATEWAY device show '" + sIf + "'");
+                auto sCon = NmcliField(sInfo, "GENERAL.CONNECTION");
+                std::string sMethod;
+                if(SafeShellArg(sCon))
+                {
+                    sMethod = NmcliField(RunCommand("nmcli -t -f ipv4.method con show '" + sCon + "'"), "ipv4.method");
+                }
+                int nCarrier = 0;
+                std::ifstream ifs("/sys/class/net/" + sIf + "/carrier");
+                ifs >> nCarrier;
+                jsIfs.push_back({{"role", ROLES[nRole]}, {"interface", sIf}, {"link", nCarrier == 1},
+                                 {"connection", sCon}, {"method", sMethod},
+                                 {"address", NmcliField(sInfo, "IP4.ADDRESS")},
+                                 {"gateway", NmcliField(sInfo, "IP4.GATEWAY")}});
+            }
+            return {{"interfaces", jsIfs}};
+        }
+        else if(sAction == "network-apply")
+        {
+            auto vInterfaces = Interfaces();
+            auto sIf = jsBody.value("interface", "");
+            auto sMethod = jsBody.value("method", "");
+            auto sAddress = jsBody.value("address", "");
+            auto sGateway = jsBody.value("gateway", "");
+
+            size_t nRole = 0;
+            while(nRole < vInterfaces.size() && vInterfaces[nRole] != sIf) { nRole++; }
+            if(nRole >= vInterfaces.size() || nRole >= 2 || !SafeShellArg(sIf)) { return {{"error", "unknown interface"}}; }
+            if(sMethod != "dhcp" && sMethod != "static") { return {{"error", "mode must be dhcp or static"}}; }
+            if(sMethod == "static" && !ValidIp4(sAddress, true)) { return {{"error", "address must be a.b.c.d/prefix"}}; }
+            if(!sGateway.empty() && !ValidIp4(sGateway, false)) { return {{"error", "bad gateway"}}; }
+
+            //reuse the profile currently on the device, else create a role-named one
+            auto sCon = NmcliField(RunCommand("nmcli -t -f GENERAL.CONNECTION device show '" + sIf + "'"),
+                                   "GENERAL.CONNECTION");
+            if(!SafeShellArg(sCon))
+            {
+                sCon = nRole == 0 ? "amber" : "blue";
+                RunCommand("sudo -n nmcli con add type ethernet ifname '" + sIf + "' con-name '" + sCon + "'");
+            }
+            std::string sMod = "sudo -n nmcli con mod '" + sCon + "' ";
+            if(sMethod == "dhcp") { sMod += "ipv4.method auto ipv4.addresses '' ipv4.gateway ''"; }
+            else                  { sMod += "ipv4.method manual ipv4.addresses '" + sAddress + "' ipv4.gateway '" + sGateway + "'"; }
+            auto sResult = RunCommand(sMod);
+            if(sResult.find("Error") != std::string::npos) { return {{"error", sResult}}; }
+
+            //activate detached - if this is the requester's own subnet the reply
+            //may not make it back, the ui reloads the state afterwards anyway
+            LOG_INFO("web") << "network " << sIf << " (" << sCon << ") -> " << sMethod
+                            << (sMethod == "static" ? " " + sAddress : "");
+            (void)!system(("sudo -n nmcli con up '" + sCon + "' >/dev/null 2>&1 &").c_str());
+            return {{"ok", true}};
         }
         return {{"status", nStatus}};
     };

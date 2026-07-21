@@ -30,6 +30,11 @@ if [ "$1" = "--build" ]; then
     exit 0
 fi
 
+echo "== permissions =="
+# the web ui configures interface addresses through nmcli
+echo "$USER ALL=(root) NOPASSWD: /usr/bin/nmcli" | sudo tee /etc/sudoers.d/pi-audio-node >/dev/null
+sudo chmod 440 /etc/sudoers.d/pi-audio-node
+
 echo "== systemd service =="
 sudo tee /etc/systemd/system/pi-audio-node.service >/dev/null <<EOF
 [Unit]

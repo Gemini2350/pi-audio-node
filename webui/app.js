@@ -11,6 +11,7 @@ function showPage(name) {
     document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
     $("page-" + name).classList.add("active");
     history.replaceState(null, "", "#" + name);
+    if (name === "settings") loadNetwork();
 }
 document.querySelectorAll(".tab").forEach(tab => { tab.onclick = () => showPage(tab.dataset.page); });
 if (location.hash.length > 1) showPage(location.hash.slice(1));
@@ -251,6 +252,59 @@ async function loadFiles() {
     $("tx-file").innerHTML = files.map(f => `<option>${f}</option>`).join("") || "<option value=''>no files</option>";
 }
 
+/* ---------- interface setup ---------- */
+async function loadNetwork() {
+    let ifs;
+    try { ifs = (await api("/api/action/network-status", "POST", {})).interfaces || []; }
+    catch (e) { $("net-ifs").textContent = "network state unavailable"; return; }
+
+    $("net-ifs").innerHTML = ifs.map((f, n) => `
+        <div class="netif">
+            <div class="row">
+                <span class="pill ${f.role}">${f.role.toUpperCase()}</span>
+                <span class="ifname">${f.interface}</span>
+                <span class="pill ${f.link ? "ok" : "bad"}">${f.link ? "Link" : "No link"}</span>
+                <span class="cur">${f.address || "no address"}${f.gateway ? " · gw " + f.gateway : ""}
+                    ${f.method ? " · " + (f.method === "auto" ? "DHCP" : "static") : ""}</span>
+            </div>
+            <div class="row">
+                <label class="inline">Mode <select id="net-method-${n}">
+                    <option value="dhcp" ${f.method !== "manual" ? "selected" : ""}>DHCP</option>
+                    <option value="static" ${f.method === "manual" ? "selected" : ""}>Static</option>
+                </select></label>
+                <label class="inline">IP/Prefix <input id="net-addr-${n}" size="16"
+                    value="${f.address || ""}" placeholder="192.168.10.5/24"></label>
+                <label class="inline">Gateway <input id="net-gw-${n}" size="12"
+                    value="${f.gateway || ""}" placeholder="optional"></label>
+                <button class="btn" id="net-apply-${n}">Apply</button>
+            </div>
+        </div>`).join("") || `<div class="sub">no interfaces configured</div>`;
+
+    ifs.forEach((f, n) => {
+        const toggle = () => {
+            const dhcp = $("net-method-" + n).value === "dhcp";
+            $("net-addr-" + n).disabled = dhcp;
+            $("net-gw-" + n).disabled = dhcp;
+        };
+        $("net-method-" + n).onchange = toggle;
+        toggle();
+        $("net-apply-" + n).onclick = async () => {
+            const body = {interface: f.interface, method: $("net-method-" + n).value,
+                          address: $("net-addr-" + n).value.trim(), gateway: $("net-gw-" + n).value.trim()};
+            if (body.method === "static" && !/^\d+\.\d+\.\d+\.\d+\/\d+$/.test(body.address)) {
+                alert("IP must be address/prefix, e.g. 192.168.10.5/24");
+                return;
+            }
+            $("net-apply-" + n).textContent = "Applying…";
+            try {
+                const r = await api("/api/action/network-apply", "POST", body);
+                if (r.error) alert(r.error);
+            } catch (e) {}
+            setTimeout(loadNetwork, 4000);
+        };
+    });
+}
+
 /* ---------- settings ---------- */
 $("set-save").onclick = () => setConfig({
     "device.label": $("set-label").value,
@@ -291,4 +345,5 @@ async function loadConfig() {
 
 loadConfig();
 loadFiles();
+loadNetwork();
 connectWs();
