@@ -35,6 +35,13 @@ echo "== permissions =="
 echo "$USER ALL=(root) NOPASSWD: /usr/bin/nmcli" | sudo tee /etc/sudoers.d/pi-audio-node >/dev/null
 sudo chmod 440 /etc/sudoers.d/pi-audio-node
 
+echo "== sysctl (dual-homed arp) =="
+# with both legs on one subnet the kernel would answer arp for either address
+# on either nic - nm's conflict detection then drops the lease
+printf 'net.ipv4.conf.all.arp_ignore=1\nnet.ipv4.conf.default.arp_ignore=1\nnet.ipv4.conf.all.arp_announce=2\nnet.ipv4.conf.default.arp_announce=2\n' \
+    | sudo tee /etc/sysctl.d/90-pi-audio-node.conf >/dev/null
+sudo sysctl --system >/dev/null
+
 echo "== systemd service =="
 sudo tee /etc/systemd/system/pi-audio-node.service >/dev/null <<EOF
 [Unit]

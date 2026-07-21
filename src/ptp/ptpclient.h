@@ -79,6 +79,7 @@ namespace pan::ptp
             std::atomic<int> m_nDomain{0};
             std::array<int, 2> m_anEventSocket{-1, -1};     //319, per interface
             std::array<int, 2> m_anGeneralSocket{-1, -1};   //320, per interface
+            std::array<int, 2> m_anIfIndex{0, 0};           //for IP_PKTINFO attribution
             ClockIdentity m_ownIdentity{};
 
             std::thread m_rxThread;

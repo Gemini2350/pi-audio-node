@@ -46,6 +46,9 @@ namespace
         setsockopt(nSocket, SOL_SOCKET, SO_REUSEADDR, &nOn, sizeof(nOn));
         setsockopt(nSocket, SOL_SOCKET, SO_REUSEPORT, &nOn, sizeof(nOn));
         setsockopt(nSocket, SOL_SOCKET, SO_TIMESTAMPNS, &nOn, sizeof(nOn));
+        //both sockets share the port and group, so reuseport does not deliver
+        //strictly per interface - the real ingress comes from IP_PKTINFO
+        setsockopt(nSocket, IPPROTO_IP, IP_PKTINFO, &nOn, sizeof(nOn));
         #ifdef IP_MULTICAST_ALL
         int nOff = 0;
         setsockopt(nSocket, IPPROTO_IP, IP_MULTICAST_ALL, &nOff, sizeof(nOff));
@@ -147,6 +150,7 @@ bool PtpClient::OpenSockets()
             LOG_WARN("ptp") << "secondary interface " << m_vInterfaces[nIf] << " not found - amber only";
             continue;
         }
+        m_anIfIndex[nIf] = nIfIndex;
         m_anEventSocket[nIf] = OpenPtpSocket(PORT_EVENT, m_vInterfaces[nIf], nIfIndex);
         m_anGeneralSocket[nIf] = OpenPtpSocket(PORT_GENERAL, m_vInterfaces[nIf], nIfIndex);
         if(nIf == 0 && (m_anEventSocket[0] < 0 || m_anGeneralSocket[0] < 0)) { return false; }
@@ -209,6 +213,7 @@ void PtpClient::RxLoop()
             if(nSize < 34) { continue; }
 
             uint64_t nRxNs = RealtimeNs();
+            size_t nIngress = nInterface;
             for(cmsghdr* pCmsg = CMSG_FIRSTHDR(&msg); pCmsg; pCmsg = CMSG_NXTHDR(&msg, pCmsg))
             {
                 if(pCmsg->cmsg_level == SOL_SOCKET && pCmsg->cmsg_type == SCM_TIMESTAMPNS)
@@ -217,11 +222,20 @@ void PtpClient::RxLoop()
                     memcpy(&ts, CMSG_DATA(pCmsg), sizeof(ts));
                     nRxNs = uint64_t(ts.tv_sec)*1000000000ULL + ts.tv_nsec;
                 }
+                else if(pCmsg->cmsg_level == IPPROTO_IP && pCmsg->cmsg_type == IP_PKTINFO)
+                {
+                    in_pktinfo info;
+                    memcpy(&info, CMSG_DATA(pCmsg), sizeof(info));
+                    for(size_t nIf = 0; nIf < 2; nIf++)
+                    {
+                        if(m_anIfIndex[nIf] == info.ipi_ifindex) { nIngress = nIf; }
+                    }
+                }
             }
 
             char sFrom[INET_ADDRSTRLEN] = {0};
             inet_ntop(AF_INET, &from.sin_addr, sFrom, sizeof(sFrom));
-            HandleMessage(buffer, static_cast<size_t>(nSize), nRxNs, sFrom, nInterface);
+            HandleMessage(buffer, static_cast<size_t>(nSize), nRxNs, sFrom, nIngress);
         }
     }
 }
