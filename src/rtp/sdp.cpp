@@ -74,13 +74,14 @@ std::optional<SdpSession> pan::rtp::ParseSdp(const std::string& sSdp)
                 }
                 else if(sValue.rfind("rtpmap:", 0) == 0)
                 {
-                    int nPt = 0, nBits = 0, nRate = 0, nChannels = 2;
-                    if(sscanf(sValue.c_str(), "rtpmap:%d L%d/%d/%d", &nPt, &nBits, &nRate, &nChannels) >= 3
-                       && nPt == session.nPayloadType)
+                    int nPt = 0, nBits = 0, nRate = 0, nChannels = 0;
+                    int nMatched = sscanf(sValue.c_str(), "rtpmap:%d L%d/%d/%d", &nPt, &nBits, &nRate, &nChannels);
+                    if(nMatched >= 3 && nPt == session.nPayloadType)
                     {
                         session.nBitsPerSample = nBits;
                         session.nSampleRate = nRate;
-                        session.nChannels = nChannels;
+                        //rfc 3555: an omitted channel count means mono
+                        session.nChannels = nMatched >= 4 && nChannels > 0 ? nChannels : 1;
                     }
                 }
                 else if(sValue.rfind("ptime:", 0) == 0)

@@ -193,14 +193,16 @@ void RtpReceiver::HandlePacket(size_t nLeg, const uint8_t* pData, size_t nSize)
     leg.bHaveSeq = true;
     m_bReceiving = true;
 
-    //payload -> float
+    //payload -> stereo float frames. mono goes to both ears, streams with more
+    //than two channels are monitored on their first pair
     size_t nHeader = 12 + (pData[0] & 0x0f)*4;      //csrc list
     if(nSize <= nHeader) { return; }
     const uint8_t* pPayload = pData + nHeader;
     size_t nPayload = nSize - nHeader;
     size_t nBytesPerSample = m_session.nBitsPerSample == 16 ? 2 : 3;
-    size_t nSamples = nPayload / nBytesPerSample;
-    if(nSamples == 0) { return; }
+    size_t nChannels = m_session.nChannels > 0 ? static_cast<size_t>(m_session.nChannels) : 1;
+    size_t nFrames = nPayload / (nBytesPerSample * nChannels);
+    if(nFrames == 0) { return; }
 
     auto& slot = m_vJitter[nSeq % JITTER_SLOTS];
     if(slot.nGeneration.load() == uint32_t(nSeq)+1)
@@ -209,21 +211,23 @@ void RtpReceiver::HandlePacket(size_t nLeg, const uint8_t* pData, size_t nSize)
         return;
     }
 
-    slot.vSamples.resize(nSamples);
-    for(size_t i = 0; i < nSamples; i++)
+    auto Decode = [&](size_t nIndex) -> float
     {
-        int32_t nSample;
+        const uint8_t* p = pPayload + nIndex * nBytesPerSample;
         if(nBytesPerSample == 2)
         {
-            nSample = static_cast<int16_t>((pPayload[i*2]<<8) | pPayload[i*2+1]);
-            slot.vSamples[i] = nSample / 32768.0f;
+            return static_cast<int16_t>((p[0]<<8) | p[1]) / 32768.0f;
         }
-        else
-        {
-            nSample = (int32_t(pPayload[i*3])<<16) | (int32_t(pPayload[i*3+1])<<8) | pPayload[i*3+2];
-            if(nSample & 0x800000) { nSample |= 0xff000000; }
-            slot.vSamples[i] = nSample / 8388608.0f;
-        }
+        int32_t nSample = (int32_t(p[0])<<16) | (int32_t(p[1])<<8) | p[2];
+        if(nSample & 0x800000) { nSample |= 0xff000000; }
+        return nSample / 8388608.0f;
+    };
+    slot.vSamples.resize(nFrames * 2);
+    for(size_t nFrame = 0; nFrame < nFrames; nFrame++)
+    {
+        float fLeft = Decode(nFrame * nChannels);
+        slot.vSamples[nFrame*2] = fLeft;
+        slot.vSamples[nFrame*2+1] = nChannels >= 2 ? Decode(nFrame * nChannels + 1) : fLeft;
     }
     slot.nSeq = nSeq;
     slot.nGeneration = uint32_t(nSeq)+1;    //publish after the samples are in place
