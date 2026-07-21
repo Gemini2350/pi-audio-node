@@ -269,41 +269,82 @@ function drawChart(history) {
 /* ---------- nmos sender browser ---------- */
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 
+let sendersCache = [];
+const sndOpen = new Set();      //expanded device groups, kept across refreshes
+
 async function loadSenders() {
     $("rx-senders").textContent = "loading…";
     let r;
     try { r = await api("/api/action/nmos-senders", "POST", {}); }
     catch (e) { $("rx-senders").textContent = "query failed"; return; }
     if (r.error) { $("rx-senders").textContent = r.error; return; }
+    sendersCache = r.senders || [];
 
-    const senders = r.senders || [];
-    if (!senders.length) { $("rx-senders").textContent = "no audio senders in the registry"; return; }
-
+    /* the group with the active connection starts expanded */
     const cur = (status.nmos || {}).connected_sender_id;
-    $("rx-senders").innerHTML = `<table class="kv">` + senders.map((s, n) => `
-        <tr><td>${esc(s.label) || "(unnamed)"}${s.is_self ? ' <span class="pill off">this device</span>' : ""}
-            <div class="sub">${esc(s.device)}${s.media_type ? " · " + esc(s.media_type) : ""}</div></td>
-        <td style="text-align:right">${s.id === cur
-            ? '<span class="pill ok">connected</span> <button class="btn" id="snd-off-' + n + '">Disconnect</button>'
-            : '<button class="btn" id="snd-on-' + n + '"' + (s.manifest_href ? "" : " disabled") + '>Connect</button>'}
-        </td></tr>`).join("") + `</table>`;
+    const conn = sendersCache.find(s => s.id === cur);
+    if (conn) sndOpen.add(conn.device || "(no device)");
+    renderSenders();
+}
 
-    senders.forEach((s, n) => {
-        const on = $("snd-on-" + n), off = $("snd-off-" + n);
-        if (on) on.onclick = async () => {
-            on.textContent = "Connecting…";
+function renderSenders() {
+    if (!sendersCache.length) { $("rx-senders").textContent = "no audio senders in the registry"; return; }
+    const filter = ($("rx-filter").value || "").trim().toLowerCase();
+    const cur = (status.nmos || {}).connected_sender_id;
+
+    const groups = new Map();
+    sendersCache.forEach((s, i) => {
+        if (filter && !(s.label + " " + s.device).toLowerCase().includes(filter)) return;
+        const dev = s.device || "(no device)";
+        if (!groups.has(dev)) groups.set(dev, []);
+        groups.get(dev).push(i);
+    });
+    if (!groups.size) { $("rx-senders").textContent = "no sender matches the filter"; return; }
+
+    $("rx-senders").innerHTML = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([dev, items]) => {
+        const connected = items.some(i => sendersCache[i].id === cur);
+        const open = !!filter || sndOpen.has(dev);      //an active filter opens everything
+        return `<div class="sndgrp">
+            <div class="sndhead" data-dev="${esc(dev)}"><span class="arrow">${open ? "▾" : "▸"}</span>
+                ${esc(dev)} <span class="sub">${items.length} sender${connected ? ' · <span class="pill ok">connected</span>' : ""}</span>
+            </div>` +
+            (open ? `<table class="kv">` + items.map(i => {
+                const s = sendersCache[i];
+                return `<tr><td>${esc(s.label) || "(unnamed)"}${s.is_self ? ' <span class="pill off">this device</span>' : ""}
+                    ${s.media_type ? `<span class="sub"> · ${esc(s.media_type)}</span>` : ""}</td>
+                <td style="text-align:right">${s.id === cur
+                    ? '<span class="pill ok">connected</span> <button class="btn" data-off="' + i + '">Disconnect</button>'
+                    : '<button class="btn" data-on="' + i + '"' + (s.manifest_href ? "" : " disabled") + '>Connect</button>'}
+                </td></tr>`;
+            }).join("") + `</table>` : "") + `</div>`;
+    }).join("");
+
+    document.querySelectorAll("#rx-senders .sndhead").forEach(el => {
+        el.onclick = () => {
+            const dev = el.dataset.dev;
+            sndOpen.has(dev) ? sndOpen.delete(dev) : sndOpen.add(dev);
+            renderSenders();
+        };
+    });
+    document.querySelectorAll("#rx-senders [data-on]").forEach(btn => {
+        btn.onclick = async () => {
+            const s = sendersCache[+btn.dataset.on];
+            btn.textContent = "Connecting…";
             const result = await api("/api/action/nmos-connect", "POST",
                 {sender_id: s.id, manifest_href: s.manifest_href}).catch(() => ({error: "request failed"}));
             if (result.error) alert(result.error);
             setTimeout(loadSenders, 800);
         };
-        if (off) off.onclick = async () => {
+    });
+    document.querySelectorAll("#rx-senders [data-off]").forEach(btn => {
+        btn.onclick = async () => {
             await api("/api/action/receiver-disconnect", "POST", {}).catch(() => {});
             setTimeout(loadSenders, 800);
         };
     });
 }
 $("rx-browse").onclick = loadSenders;
+$("rx-filter").oninput = renderSenders;
 
 /* ---------- receiver controls ---------- */
 $("rx-connect").onclick = () => {
