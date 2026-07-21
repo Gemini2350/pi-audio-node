@@ -2,10 +2,13 @@
 #include <algorithm>
 #include <arpa/inet.h>
 #include <cstring>
+#include <ctime>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <random>
+#include <sched.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include "config.h"
@@ -121,50 +124,63 @@ bool RtpSender::Configure(const std::vector<Leg>& vLegs, uint16_t nPort, int nPa
 
 void RtpSender::SendLoop()
 {
+    //pacing is time critical - ask for a realtime slice. works when the
+    //installer set cap_sys_nice on the binary, otherwise stay best effort
+    sched_param sp{};
+    sp.sched_priority = 50;
+    if(pthread_setschedparam(pthread_self(), SCHED_FIFO, &sp) != 0)
+    {
+        LOG_WARN("rtptx") << "no realtime priority (cap_sys_nice missing?) - expect more pacing jitter";
+    }
+
     const size_t nFramesPerPacket = static_cast<size_t>(SAMPLE_RATE) * m_nPacketTimeUs / 1000000;
     const size_t nPayloadBytes = nFramesPerPacket * CHANNELS * BYTES_PER_SAMPLE;
     std::vector<float> vAudio(nFramesPerPacket * CHANNELS);
     std::vector<uint8_t> vPacket(12 + nPayloadBytes);
 
-    //wait for ptp before anchoring the media clock
-    m_bWaitingForPtp = true;
-    while(m_bRun && !m_ptp.IsSynced())
-    {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-    m_bWaitingForPtp = false;
-    if(!m_bRun) { return; }
+    //sleep to just before the deadline, spin the last stretch - the absolute
+    //wakeup alone is only good to a few tens of microseconds
+    constexpr int64_t SPIN_NS = 100'000;
 
     //anchor: packet n leaves at ptp time nStartNs + n*ptime, rtp timestamp is
     //the ptp media clock (samples since ptp epoch, mediaclk:direct=0)
-    uint64_t nStartNs = m_ptp.PtpTimeNs() + 20'000'000;     //begin 20 ms in the future
+    uint64_t nStartNs = 0;
     uint64_t nPacket = 0;
+    uint64_t nWindowEndNs = 0;
+    int64_t nLateAvgNs = 0, nLateMaxNs = 0;
     uint16_t nSeq = static_cast<uint16_t>(m_nSsrc);
+    bool bNeedAnchor = true;
 
     while(m_bRun)
     {
-        uint64_t nDeadlineNs = nStartNs + nPacket * static_cast<uint64_t>(m_nPacketTimeUs) * 1000;
+        //(re)anchor whenever ptp is not usable or the mapping jumped
+        if(bNeedAnchor || !m_ptp.IsSynced())
+        {
+            m_bWaitingForPtp = true;
+            while(m_bRun && !m_ptp.IsSynced())
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            }
+            m_bWaitingForPtp = false;
+            if(!m_bRun) { return; }
+            nStartNs = m_ptp.PtpTimeNs() + 20'000'000;      //begin 20 ms in the future
+            nPacket = 0;
+            nWindowEndNs = nStartNs + 5'000'000'000ULL;
+            bNeedAnchor = false;
+        }
 
-        //ptp time -> realtime via the current mapping, then absolute sleep
+        uint64_t nDeadlineNs = nStartNs + nPacket * static_cast<uint64_t>(m_nPacketTimeUs) * 1000;
         int64_t nAheadNs = static_cast<int64_t>(nDeadlineNs) - static_cast<int64_t>(m_ptp.PtpTimeNs());
         if(nAheadNs > 2'000'000'000 || nAheadNs < -2'000'000'000)
         {
-            //mapping jumped (ptp restart) - re-anchor
-            nStartNs = m_ptp.PtpTimeNs() + 20'000'000;
-            nPacket = 0;
+            bNeedAnchor = true;     //mapping jumped (ptp restart)
             continue;
         }
-        if(nAheadNs > 0)
-        {
-            timespec ts{static_cast<time_t>(nAheadNs / 1000000000), static_cast<long>(nAheadNs % 1000000000)};
-            nanosleep(&ts, nullptr);
-        }
 
-        bool bHaveAudio;
-        {
-            std::lock_guard<std::mutex> lg(m_mutex);
-            bHaveAudio = m_pSource && m_pSource->Read(vAudio.data(), nFramesPerPacket);
-        }
+        //build the whole packet BEFORE the deadline so the wakeup only sends.
+        //no lock: source and sockets only change while the thread is stopped
+        //(Configure joins first), the leg switches are atomics
+        bool bHaveAudio = m_pSource && m_pSource->Read(vAudio.data(), nFramesPerPacket);
         m_bEssenceOk = bHaveAudio;
         m_meters.Feed(vAudio.data(), nFramesPerPacket);
 
@@ -192,18 +208,39 @@ void RtpSender::SendLoop()
             vPacket[12 + i*3 + 2] = nSample & 0xff;
         }
 
+        //absolute sleep on the realtime clock (deadline via the ptp mapping),
+        //then spin the final stretch to the exact ptp deadline
+        uint64_t nWakeNs = m_ptp.PtpToRealtimeNs(nDeadlineNs) - SPIN_NS;
+        timespec ts{static_cast<time_t>(nWakeNs / 1000000000ULL), static_cast<long>(nWakeNs % 1000000000ULL)};
+        clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &ts, nullptr);
+        for(;;)
         {
-            std::lock_guard<std::mutex> lg(m_mutex);
-            for(size_t nLeg = 0; nLeg < m_vSockets.size(); nLeg++)
+            int64_t nRemainNs = static_cast<int64_t>(nDeadlineNs) - static_cast<int64_t>(m_ptp.PtpTimeNs());
+            if(nRemainNs <= 0 || nRemainNs > 2*SPIN_NS) { break; }  //due, or the mapping moved
+        }
+
+        for(size_t nLeg = 0; nLeg < m_vSockets.size(); nLeg++)
+        {
+            if(!m_abLegEnabled[nLeg]) { continue; }
+            if(send(m_vSockets[nLeg], vPacket.data(), vPacket.size(), 0) < 0)
             {
-                if(!m_abLegEnabled[nLeg]) { continue; }
-                if(send(m_vSockets[nLeg], vPacket.data(), vPacket.size(), 0) < 0)
-                {
-                    m_nSendErrors++;
-                }
+                m_nSendErrors++;
             }
         }
         m_nPacketsSent++;
+
+        //pacing quality: lateness of this send vs its deadline
+        int64_t nLateNs = std::max<int64_t>(0,
+            static_cast<int64_t>(m_ptp.PtpTimeNs()) - static_cast<int64_t>(nDeadlineNs));
+        nLateAvgNs += (nLateNs - nLateAvgNs) / 16;
+        nLateMaxNs = std::max(nLateMaxNs, nLateNs);
+        m_nLateAvgNs = nLateAvgNs;
+        if(nDeadlineNs >= nWindowEndNs)
+        {
+            m_nLateMaxNs = nLateMaxNs;
+            nLateMaxNs = 0;
+            nWindowEndNs = nDeadlineNs + 5'000'000'000ULL;
+        }
         nSeq++;
         nPacket++;
     }
@@ -246,6 +283,8 @@ json RtpSender::GetStatusJson() const
     js["essence_ok"] = m_bEssenceOk.load();
     js["packets_sent"] = m_nPacketsSent.load();
     js["send_errors"] = m_nSendErrors.load();
+    js["late_avg_us"] = m_nLateAvgNs.load() / 1000.0;
+    js["late_max_us"] = m_nLateMaxNs.load() / 1000.0;
     js["meters"] = {{"left_db", m_meters.LeftDb()}, {"right_db", m_meters.RightDb()}};
     std::lock_guard<std::mutex> lg(m_mutex);
     js["source"] = m_sSourceName;

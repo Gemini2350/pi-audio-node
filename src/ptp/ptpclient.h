@@ -33,6 +33,11 @@ namespace pan::ptp
 
             bool IsSynced() const { return m_bSynced.load(); }
             uint64_t PtpTimeNs() const;         //0 if never synced
+            //ptp time -> CLOCK_REALTIME via the current mapping (for absolute deadline sleeps)
+            uint64_t PtpToRealtimeNs(uint64_t nPtpNs) const
+            {
+                return uint64_t(int64_t(nPtpNs) - m_nMappingNs.load());
+            }
             std::string GrandmasterId() const;
 
             nlohmann::json GetStatusJson() const;   //analyzer + status data for ui/nmos

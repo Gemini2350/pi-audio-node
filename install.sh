@@ -22,7 +22,7 @@ cmake --build build -j"$(nproc)"
 
 echo "== install =="
 sudo cmake --install build >/dev/null
-sudo setcap cap_net_bind_service+ep /usr/local/bin/pi-audio-node
+sudo setcap 'cap_net_bind_service,cap_sys_nice+ep' /usr/local/bin/pi-audio-node
 mkdir -p ~/audio-files
 
 if [ "$1" = "--build" ]; then

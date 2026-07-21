@@ -139,6 +139,8 @@ function render() {
     $("tx-stats").innerHTML =
         `<tr><td>Packets</td><td>${tx.packets_sent || 0}</td></tr>
          <tr><td>Send errors</td><td>${tx.send_errors || 0}</td></tr>
+         <tr><td>TX timing</td><td>${tx.running ? "avg " + (tx.late_avg_us || 0).toFixed(0) + " µs · peak " +
+             (tx.late_max_us || 0).toFixed(0) + " µs (5 s)" : "–"}</td></tr>
          <tr><td>Source</td><td>${tx.source || "–"}</td></tr>` +
         (tx.legs || []).map((leg, i) =>
             `<tr><td>Leg ${i + 1}</td><td>${leg.multicast}:${leg.port} @ ${leg.interface}` +

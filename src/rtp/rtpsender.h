@@ -76,5 +76,9 @@ namespace pan::rtp
             std::array<std::atomic<bool>, 2> m_abLegEnabled{{true, true}};
             uint32_t m_nSsrc = 0;
             audio::Meters m_meters;
+
+            //pacing quality: how late the send happened vs the ptp deadline
+            std::atomic<int64_t> m_nLateAvgNs{0};
+            std::atomic<int64_t> m_nLateMaxNs{0};   //max over the last 5s window
     };
 }
