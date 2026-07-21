@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="google" content="notranslate">
+<title>pi-audio-node</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav id="nav">
+    <div class="brand"><span class="dot" id="conn-dot"></span> pi-audio-node</div>
+    <button class="tab active" data-page="dashboard">Übersicht</button>
+    <button class="tab" data-page="receiver">Empfänger</button>
+    <button class="tab" data-page="sender">Sender</button>
+    <button class="tab" data-page="ptp">PTP</button>
+    <button class="tab" data-page="settings">Setup</button>
+</nav>
+
+<main>
+<!-- ================= DASHBOARD ================= -->
+<section id="page-dashboard" class="page active">
+    <div class="grid">
+        <div class="card">
+            <h2>PTP <span class="pill" id="d-ptp-state">–</span></h2>
+            <div class="big" id="d-ptp-gm">–</div>
+            <div class="sub">Grandmaster · Offset <span id="d-ptp-offset">–</span></div>
+        </div>
+        <div class="card">
+            <h2>Empfänger <span class="pill" id="d-rx-state">–</span></h2>
+            <div class="meter-pair">
+                <div class="meter"><div class="meter-fill" id="d-rx-meter-l"></div></div>
+                <div class="meter"><div class="meter-fill" id="d-rx-meter-r"></div></div>
+            </div>
+            <div class="sub" id="d-rx-info">–</div>
+        </div>
+        <div class="card">
+            <h2>Sender <span class="pill" id="d-tx-state">–</span></h2>
+            <div class="meter-pair">
+                <div class="meter"><div class="meter-fill" id="d-tx-meter-l"></div></div>
+                <div class="meter"><div class="meter-fill" id="d-tx-meter-r"></div></div>
+            </div>
+            <div class="sub" id="d-tx-info">–</div>
+        </div>
+        <div class="card">
+            <h2>NMOS</h2>
+            <div class="big small" id="d-nmos-registry">–</div>
+            <div class="sub" id="d-nmos-status">–</div>
+        </div>
+    </div>
+</section>
+
+<!-- ================= RECEIVER ================= -->
+<section id="page-receiver" class="page">
+    <div class="grid">
+        <div class="card wide">
+            <h2>Status <span class="pill" id="rx-overall">–</span></h2>
+            <div class="domains" id="rx-domains"></div>
+        </div>
+        <div class="card">
+            <h2>Legs (ST 2022-7)</h2>
+            <div id="rx-legs" class="legs"></div>
+        </div>
+        <div class="card">
+            <h2>Statistik</h2>
+            <table class="kv" id="rx-stats"></table>
+        </div>
+        <div class="card wide">
+            <h2>Manuell verbinden</h2>
+            <textarea id="rx-sdp" placeholder="SDP hier einfügen (a=group:DUP wird unterstützt)…" rows="5"></textarea>
+            <div class="row">
+                <button class="btn primary" id="rx-connect">Verbinden</button>
+                <button class="btn" id="rx-disconnect">Trennen</button>
+                <label class="inline">Gain <input type="range" id="rx-gain" min="-40" max="12" step="1" value="0">
+                    <span id="rx-gain-val">0 dB</span></label>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ================= SENDER ================= -->
+<section id="page-sender" class="page">
+    <div class="grid">
+        <div class="card wide">
+            <h2>Quelle</h2>
+            <div class="row seg" id="tx-source-seg">
+                <button data-src="tone" class="btn">Ton</button>
+                <button data-src="sweep" class="btn">Sweep</button>
+                <button data-src="file" class="btn">Datei</button>
+            </div>
+            <div class="row" id="tx-tone-row">
+                <label class="inline">Frequenz <input type="number" id="tx-freq" value="440" min="10" max="20000"> Hz</label>
+                <label class="inline">Pegel <input type="number" id="tx-level" value="-18" min="-60" max="0"> dBFS</label>
+            </div>
+            <div class="row" id="tx-file-row" style="display:none">
+                <select id="tx-file"></select>
+                <label class="inline"><input type="checkbox" id="tx-loop" checked> Loop</label>
+                <label class="btn" for="tx-upload">Hochladen…</label>
+                <input type="file" id="tx-upload" accept=".wav,.mp3" style="display:none">
+            </div>
+            <div class="row">
+                <button class="btn primary" id="tx-start">Senden starten</button>
+                <button class="btn" id="tx-stop">Stoppen</button>
+                <span class="pill" id="tx-state">–</span>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Transport</h2>
+            <table class="kv">
+                <tr><td>Multicast 1</td><td><input id="tx-mc1" size="14"></td></tr>
+                <tr><td>Multicast 2</td><td><input id="tx-mc2" size="14"></td></tr>
+                <tr><td>Port</td><td><input id="tx-port" size="6"></td></tr>
+            </table>
+            <div class="sub">Leg 2 wird gesendet, wenn ein zweites Interface konfiguriert ist</div>
+        </div>
+        <div class="card">
+            <h2>Status</h2>
+            <table class="kv" id="tx-stats"></table>
+        </div>
+    </div>
+</section>
+
+<!-- ================= PTP ================= -->
+<section id="page-ptp" class="page">
+    <div class="grid">
+        <div class="card wide">
+            <h2>Analyzer <span class="pill" id="ptp-state">–</span>
+                <label class="inline right">Domain <input type="number" id="ptp-domain" min="0" max="127" style="width:4em"></label>
+            </h2>
+            <div class="sub">Eigene Identität: <span id="ptp-identity">–</span> · Offset <span id="ptp-offset">–</span> · Path Delay <span id="ptp-delay">–</span></div>
+            <table class="masters" id="ptp-masters">
+                <thead><tr>
+                    <th>BMCA</th><th>Quelle</th><th>Grandmaster</th><th>P1</th><th>Class</th><th>Acc</th><th>Var</th><th>P2</th><th>Steps</th><th>Ann</th><th>Entscheid</th>
+                </tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="card wide">
+            <h2>Offset-Verlauf <span class="sub">(ns, um den Mittelwert)</span></h2>
+            <canvas id="ptp-chart" height="120"></canvas>
+        </div>
+    </div>
+</section>
+
+<!-- ================= SETTINGS ================= -->
+<section id="page-settings" class="page">
+    <div class="grid">
+        <div class="card">
+            <h2>Gerät</h2>
+            <table class="kv">
+                <tr><td>Name</td><td><input id="set-label"></td></tr>
+                <tr><td>Interface 1</td><td><input id="set-if1" size="8"></td></tr>
+                <tr><td>Interface 2</td><td><input id="set-if2" size="8" placeholder="leer = aus"></td></tr>
+                <tr><td>ALSA-Gerät</td><td><input id="set-alsa"></td></tr>
+                <tr><td>Playout-Delay</td><td><input id="set-delay" size="4"> ms</td></tr>
+            </table>
+        </div>
+        <div class="card">
+            <h2>NMOS</h2>
+            <table class="kv">
+                <tr><td>Registry</td><td><input id="set-registry" placeholder="auto (DNS-SD)"></td></tr>
+            </table>
+            <div class="sub" id="set-version">–</div>
+        </div>
+        <div class="card">
+            <h2>&nbsp;</h2>
+            <button class="btn primary" id="set-save">Speichern &amp; anwenden</button>
+            <div class="sub">Interface-Änderungen brauchen einen Neustart des Dienstes</div>
+        </div>
+    </div>
+</section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
