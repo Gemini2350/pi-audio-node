@@ -3,6 +3,10 @@
 const $ = id => document.getElementById(id);
 let config = {};
 let status = {};
+/* sender browser state - declared before showPage() may call loadSenders() */
+let sendersCache = [];
+let lastCurSender = null;
+const sndOpen = new Set();      //expanded device groups, kept across refreshes
 
 /* ---------- navigation ---------- */
 function showPage(name) {
@@ -333,10 +337,6 @@ function drawChart(history) {
 
 /* ---------- nmos sender browser ---------- */
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-
-let sendersCache = [];
-let lastCurSender = null;
-const sndOpen = new Set();      //expanded device groups, kept across refreshes
 
 async function loadSenders() {
     /* refresh silently once a list is shown - collapsing to "loading…"
