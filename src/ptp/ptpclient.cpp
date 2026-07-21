@@ -500,7 +500,16 @@ json PtpClient::GetStatusJson() const
     js["identity"] = IdentityToString(m_ownIdentity);
     js["synced"] = m_bSynced.load();
     js["sync_count"] = m_nSyncCount;
-    js["offset_ns"] = m_dSmoothedOffsetNs;
+    //ptp runs on TAI, the system clock on UTC - subtract the announced tai-utc
+    //offset so the ui shows the actual system clock error, not the 37s constant
+    int nUtcOffset = 37;
+    if(m_selectedMaster)
+    {
+        auto it = m_mForeign.find(*m_selectedMaster);
+        if(it != m_mForeign.end()) { nUtcOffset = it->second.dataset.nUtcOffset; }
+    }
+    js["tai_utc_offset"] = nUtcOffset;
+    js["offset_ns"] = m_dSmoothedOffsetNs - double(nUtcOffset)*1e9;
     js["mean_path_delay_ns"] = m_bHaveDelay ? json(m_dMeanPathDelayNs) : json();
     js["masters"] = json::array();
 

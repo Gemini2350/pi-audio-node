@@ -16,9 +16,9 @@ document.querySelectorAll(".tab").forEach(tab => { tab.onclick = () => showPage(
 if (location.hash.length > 1) showPage(location.hash.slice(1));
 
 /* ---------- helpers ---------- */
-const STATE_NAMES = ["Inaktiv", "Gesund", "Teilgestört", "Gestört"];
+const STATE_NAMES = ["Inactive", "Healthy", "Partially healthy", "Unhealthy"];
 const STATE_CLASS = ["off", "ok", "warn", "bad"];
-const LINK_NAMES = {1: "Alle up", 2: "Teilweise down", 3: "Alle down"};
+const LINK_NAMES = {1: "All up", 2: "Some down", 3: "All down"};
 
 function pill(el, text, cls) {
     el.textContent = text;
@@ -62,67 +62,67 @@ function render() {
     const mon = status.monitors || {};
 
     /* dashboard */
-    pill($("d-ptp-state"), ptp.synced ? "Locked" : (ptp.masters && ptp.masters.length ? "Sync…" : "Kein Master"),
+    pill($("d-ptp-state"), ptp.synced ? "Locked" : (ptp.masters && ptp.masters.length ? "Syncing…" : "No master"),
          ptp.synced ? "ok" : "warn");
     const gm = (ptp.masters || []).find(m => m.selected);
     $("d-ptp-gm").textContent = gm ? gm.grandmaster : "–";
     $("d-ptp-offset").textContent = ptp.synced ? fmtNs(ptp.offset_ns) : "–";
 
-    pill($("d-rx-state"), rx.running ? (rx.receiving ? "Empfängt" : "Kein Signal") : "Aus",
+    pill($("d-rx-state"), rx.running ? (rx.receiving ? "Receiving" : "No signal") : "Off",
          rx.running ? (rx.receiving ? "ok" : "bad") : "off");
     $("d-rx-meter-l").style.width = meterWidth(rx.running && rx.meters ? rx.meters.left_db : -120);
     $("d-rx-meter-r").style.width = meterWidth(rx.running && rx.meters ? rx.meters.right_db : -120);
     $("d-rx-info").textContent = rx.running
-        ? `${rx.session_name || ""} · ${(rx.legs || []).length} Leg(s) · ${rx.played || 0} Pakete`
-        : "über NMOS patchen oder SDP einfügen";
+        ? `${rx.session_name || ""} · ${(rx.legs || []).length} leg(s) · ${rx.played || 0} packets`
+        : "patch via NMOS or paste an SDP";
 
-    pill($("d-tx-state"), tx.running ? (tx.waiting_for_ptp ? "Wartet auf PTP" : "Sendet") : "Aus",
+    pill($("d-tx-state"), tx.running ? (tx.waiting_for_ptp ? "Waiting for PTP" : "Sending") : "Off",
          tx.running ? (tx.waiting_for_ptp ? "warn" : "ok") : "off");
     $("d-tx-meter-l").style.width = meterWidth(tx.running && tx.meters ? tx.meters.left_db : -120);
     $("d-tx-meter-r").style.width = meterWidth(tx.running && tx.meters ? tx.meters.right_db : -120);
-    $("d-tx-info").textContent = tx.running ? `${tx.source} · ${tx.packets_sent} Pakete` : "–";
+    $("d-tx-info").textContent = tx.running ? `${tx.source} · ${tx.packets_sent} packets` : "–";
 
     const nmos = status.nmos || {};
-    $("d-nmos-registry").textContent = nmos.registry || "keine Registry";
+    $("d-nmos-registry").textContent = nmos.registry || "no registry";
     $("d-nmos-status").textContent = (nmos.status || "–") + " · Node " + (nmos.node_id || "").slice(0, 8) + "…";
 
     /* receiver page */
     const rmon = mon.receiver || {};
     pill($("rx-overall"), STATE_NAMES[rmon.overall || 0], STATE_CLASS[rmon.overall || 0]);
-    const domains = [["link", "Link"], ["path", "Verbindung"], ["sync", "PTP-Sync"], ["stream", "Stream"]];
+    const domains = [["link", "Link"], ["path", "Connection"], ["sync", "PTP sync"], ["stream", "Stream"]];
     $("rx-domains").innerHTML = domains.map(([key, name]) => {
         const d = rmon[key] || {status: 0, message: "", transitions: 0};
         const label = key === "link" ? (LINK_NAMES[d.status] || "–") : STATE_NAMES[d.status];
         return `<div class="domain"><div class="name">${name}</div>
                 <div class="state" style="color:var(--${STATE_CLASS[d.status] === "off" ? "off" : STATE_CLASS[d.status]})">${label}</div>
-                <div class="msg">${d.message || (d.transitions ? d.transitions + " Übergänge" : "")}</div></div>`;
+                <div class="msg">${d.message || (d.transitions ? d.transitions + " transitions" : "")}</div></div>`;
     }).join("");
 
     $("rx-legs").innerHTML = (rx.legs || []).map((leg, i) =>
         `<div class="leg"><span class="pill ${leg.active ? "ok" : "bad"}">${i ? "SEC" : "PRI"}</span>
          <span class="ifname">${leg.interface}</span><span class="addr">${leg.multicast}</span>
          <span>${leg.received} rx · ${leg.lost} lost</span></div>`).join("")
-        || `<div class="sub">kein aktiver Empfang</div>`;
+        || `<div class="sub">no active reception</div>`;
 
     $("rx-stats").innerHTML =
-        `<tr><td>Gespielt</td><td>${rx.played || 0}</td></tr>
-         <tr><td>Verdeckt (Verlust)</td><td>${rx.concealed || 0}</td></tr>
-         <tr><td>Merge-Duplikate</td><td>${rx.duplicates_merged || 0}</td></tr>
-         <tr><td>Von Leg 2 gerettet</td><td>${rx.from_secondary || 0}</td></tr>
-         <tr><td>ALSA-Puffer</td><td>${status.alsa ? Math.round(status.alsa.delay_frames / 48) : 0} ms</td></tr>
+        `<tr><td>Played</td><td>${rx.played || 0}</td></tr>
+         <tr><td>Concealed (loss)</td><td>${rx.concealed || 0}</td></tr>
+         <tr><td>Merge duplicates</td><td>${rx.duplicates_merged || 0}</td></tr>
+         <tr><td>Saved by leg 2</td><td>${rx.from_secondary || 0}</td></tr>
+         <tr><td>ALSA buffer</td><td>${status.alsa ? Math.round(status.alsa.delay_frames / 48) : 0} ms</td></tr>
          <tr><td>Underruns</td><td>${status.alsa ? status.alsa.underruns : 0}</td></tr>`;
 
     /* sender page */
-    pill($("tx-state"), tx.running ? (tx.essence_ok ? "Sendet" : "Quelle leer") : "Aus",
+    pill($("tx-state"), tx.running ? (tx.essence_ok ? "Sending" : "Source empty") : "Off",
          tx.running ? (tx.essence_ok ? "ok" : "warn") : "off");
     $("tx-stats").innerHTML =
-        `<tr><td>Pakete</td><td>${tx.packets_sent || 0}</td></tr>
-         <tr><td>Sendefehler</td><td>${tx.send_errors || 0}</td></tr>
-         <tr><td>Quelle</td><td>${tx.source || "–"}</td></tr>` +
+        `<tr><td>Packets</td><td>${tx.packets_sent || 0}</td></tr>
+         <tr><td>Send errors</td><td>${tx.send_errors || 0}</td></tr>
+         <tr><td>Source</td><td>${tx.source || "–"}</td></tr>` +
         (tx.legs || []).map((leg, i) => `<tr><td>Leg ${i + 1}</td><td>${leg.multicast}:${leg.port} @ ${leg.interface}</td></tr>`).join("");
 
     /* ptp page */
-    pill($("ptp-state"), ptp.synced ? "Locked" : "Nicht synchron", ptp.synced ? "ok" : "warn");
+    pill($("ptp-state"), ptp.synced ? "Locked" : "Not synced", ptp.synced ? "ok" : "warn");
     $("ptp-identity").textContent = ptp.identity || "–";
     $("ptp-offset").textContent = fmtNs(ptp.offset_ns);
     $("ptp-delay").textContent = fmtNs(ptp.mean_path_delay_ns);
@@ -135,7 +135,7 @@ function render() {
          <td>${m.priority1}</td><td>${m.clock_class}</td><td>0x${m.clock_accuracy.toString(16)}</td>
          <td>0x${m.variance.toString(16)}</td><td>${m.priority2}</td><td>${m.steps_removed}</td>
          <td>${m.announces}</td><td class="sub">${m.bmca}</td></tr>`).join("")
-        || `<tr><td colspan="11" class="sub">keine Announce-Messages auf Domain ${ptp.domain}</td></tr>`;
+        || `<tr><td colspan="11" class="sub">no announce messages on domain ${ptp.domain}</td></tr>`;
     drawChart(ptp.offset_history || []);
 }
 
@@ -207,7 +207,7 @@ $("tx-upload").onchange = async () => {
 
 async function loadFiles() {
     const files = await api("/api/files");
-    $("tx-file").innerHTML = files.map(f => `<option>${f}</option>`).join("") || "<option value=''>keine Dateien</option>";
+    $("tx-file").innerHTML = files.map(f => `<option>${f}</option>`).join("") || "<option value=''>no files</option>";
 }
 
 /* ---------- settings ---------- */
