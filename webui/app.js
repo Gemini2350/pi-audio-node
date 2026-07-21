@@ -104,6 +104,14 @@ function render() {
          <span>${leg.received} rx · ${leg.lost} lost</span></div>`).join("")
         || `<div class="sub">no active reception</div>`;
 
+    /* keep the gain slider in sync with changes made from other browsers,
+       unless the user is moving it right now */
+    if (rx.gain_db !== undefined && Date.now() - gainTouchedAt > 1500
+        && parseFloat($("rx-gain").value) !== rx.gain_db) {
+        $("rx-gain").value = rx.gain_db;
+        $("rx-gain-val").textContent = rx.gain_db + " dB";
+    }
+
     $("rx-stats").innerHTML =
         `<tr><td>Played</td><td>${rx.played || 0}</td></tr>
          <tr><td>Concealed (loss)</td><td>${rx.concealed || 0}</td></tr>
@@ -174,7 +182,11 @@ $("rx-connect").onclick = () => {
     if (sdp) api("/api/action/receiver-connect", "POST", {sdp});
 };
 $("rx-disconnect").onclick = () => api("/api/action/receiver-disconnect", "POST", {});
-$("rx-gain").oninput = () => { $("rx-gain-val").textContent = $("rx-gain").value + " dB"; };
+let gainTouchedAt = 0;
+$("rx-gain").oninput = () => {
+    gainTouchedAt = Date.now();
+    $("rx-gain-val").textContent = $("rx-gain").value + " dB";
+};
 $("rx-gain").onchange = () => setConfig({"receiver.gain_db": parseFloat($("rx-gain").value)});
 
 /* ---------- sender controls ---------- */

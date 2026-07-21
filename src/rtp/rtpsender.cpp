@@ -168,8 +168,11 @@ void RtpSender::SendLoop()
         m_bEssenceOk = bHaveAudio;
         m_meters.Feed(vAudio.data(), nFramesPerPacket);
 
-        //rtp header
-        uint32_t nRtpTs = static_cast<uint32_t>((nDeadlineNs / 1000) * SAMPLE_RATE / 1000000);
+        //rtp header - media clock is samples since the ptp epoch mod 2^32
+        //(mediaclk:direct=0). split seconds off first: ns*48000 overflows uint64
+        uint64_t nSec = nDeadlineNs / 1000000000ULL;
+        uint32_t nRtpTs = static_cast<uint32_t>(nSec * SAMPLE_RATE
+                            + (nDeadlineNs % 1000000000ULL) * SAMPLE_RATE / 1000000000ULL);
         vPacket[0] = 0x80;
         vPacket[1] = static_cast<uint8_t>(m_nPayloadType);
         vPacket[2] = nSeq >> 8;

@@ -116,6 +116,7 @@ int main(int argc, char** argv)
         js["ptp"] = ptpClient.GetStatusJson();
         js["sender"] = sender.GetStatusJson();
         js["receiver"] = receiver.GetStatusJson();
+        js["receiver"]["gain_db"] = Config::Get().GetValue<double>("receiver.gain_db", 0.0);
         js["nmos"] = node.GetStatusJson();
         js["alsa"] = {{"underruns", alsa.Underruns()}, {"delay_frames", alsa.DelayFrames()}};
         if(auto* pIs12 = node.GetIs12()) { js["monitors"] = pIs12->GetMonitorJson(); }
@@ -207,6 +208,7 @@ int main(int argc, char** argv)
         else
         {
             auto nPlayed = jsRx.value("played", 0ULL);
+            if(nPlayed < nLastPlayed) { nLastPlayed = 0; }      //receiver was reconfigured
             pIs12->UpdateReceiverDomain(nmos::Is12Server::PATH, 1, "");
             pIs12->UpdateReceiverDomain(nmos::Is12Server::STREAM,
                 nPlayed > nLastPlayed ? 1 : 2, nPlayed > nLastPlayed ? "" : "no audio decoded");
@@ -218,6 +220,7 @@ int main(int argc, char** argv)
             for(size_t nLeg = 0; nLeg < jsLegs.size() && nLeg < 2; nLeg++)
             {
                 auto nLost = receiver.LostPackets(nLeg);
+                if(nLost < nLastLost[nLeg]) { nLastLost[nLeg] = 0; }
                 if(nLost > nLastLost[nLeg])
                 {
                     pIs12->AddReceiverLost(jsLegs[nLeg].value("interface", "leg"+std::to_string(nLeg)), nLost - nLastLost[nLeg]);
@@ -231,6 +234,7 @@ int main(int argc, char** argv)
                 nLink == 1 ? "" : (nLink == 2 ? "one leg down" : "all legs down"));
 
             auto nLate = receiver.LatePackets();
+            if(nLate < nLastLate) { nLastLate = 0; }
             if(nLate > nLastLate)
             {
                 pIs12->AddReceiverLate(nLate - nLastLate);
@@ -252,6 +256,7 @@ int main(int argc, char** argv)
         else
         {
             auto nSent = jsTx.value("packets_sent", 0ULL);
+            if(nSent < nLastSent) { nLastSent = 0; }            //sender was reconfigured
             pIs12->UpdateSenderDomain(nmos::Is12Server::PATH, nSent > nLastSent ? 1 : 3,
                                       nSent > nLastSent ? "" : "transmission stalled");
             nLastSent = nSent;
@@ -259,6 +264,7 @@ int main(int argc, char** argv)
                                       sender.IsSendingAudio() ? "" : "source exhausted");
             auto nErrors = jsTx.value("send_errors", 0ULL);
             static uint64_t nLastErrors = 0;
+            if(nErrors < nLastErrors) { nLastErrors = 0; }
             if(nErrors > nLastErrors)
             {
                 pIs12->AddSenderErrors("socket_errors", nErrors - nLastErrors);

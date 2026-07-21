@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -20,6 +21,10 @@ namespace pan::nmos
         int nStatus = 0;
         std::string sMessage;
         uint32_t nTransitions = 0;
+        //bcp-008 statusReportingDelay: a less healthy state is held back here
+        //until it has persisted for the delay
+        int nPendingStatus = -1;
+        std::chrono::steady_clock::time_point pendingSince;
     };
 
     /** IS-12 control protocol websocket at /x-nmos/ncp/v1.0 with the minimal

@@ -343,8 +343,22 @@ void Is12Server::Notify(int nOid, int nLevel, int nIndex, const json& jsValue)
 
 void Is12Server::UpdateDomain(Monitor& monitor, int nDomain, int nStatus, const std::string& sMessage)
 {
-    //caller holds m_mutex
+    //caller holds m_mutex. statusReportingDelay (3s): a state less healthy than
+    //the current one is only reported once it has persisted for the delay, so
+    //transients right after a switch never show up. healthier states apply
+    //immediately.
     auto& domain = monitor.aDomains[nDomain];
+    if(nStatus > 1 && nStatus > domain.nStatus)
+    {
+        auto now = std::chrono::steady_clock::now();
+        if(domain.nPendingStatus != nStatus)
+        {
+            domain.nPendingStatus = nStatus;
+            domain.pendingSince = now;
+        }
+        if(now - domain.pendingSince < std::chrono::seconds(3)) { return; }
+    }
+    domain.nPendingStatus = -1;
     int nBase = DOMAIN_BASE[nDomain];
     if(domain.nStatus != nStatus)
     {

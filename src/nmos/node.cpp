@@ -440,6 +440,10 @@ void NmosNode::RegistrationLoop()
         for(int i = 0; i < 25 && m_bRun; i++)
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(bRegistered ? 200 : 80));
+            //push is-05/config changes to the registry right away instead of
+            //waiting out the full heartbeat interval - controllers see the
+            //switch immediately
+            if(bRegistered && m_nVersion.load() != m_nRegisteredVersion.load()) { break; }
         }
     }
 
