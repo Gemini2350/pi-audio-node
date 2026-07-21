@@ -204,7 +204,10 @@ function drawBufferChart(history, criticalMs, live) {
         return;
     }
 
-    const top = Math.max(criticalMs * 4, 10, ...history.map(s => s[1])) * 1.1;
+    /* quantized scale so the chart does not rescale on every sample */
+    const need = Math.max(criticalMs * 2, 10, ...history.map(s => s[1])) * 1.15;
+    const STEPS = [10, 20, 30, 50, 75, 100, 150, 200, 300, 500];
+    const top = STEPS.find(v => v >= need) || Math.ceil(need / 500) * 500;
     const y = ms => h - 4 - (ms / top) * (h - 20);
     const x = i => i / (history.length - 1) * w;
 
@@ -236,7 +239,7 @@ function drawBufferChart(history, criticalMs, live) {
     ctx.fillText("critical < " + criticalMs.toFixed(0) + " ms", 6, y(criticalMs) - 5);
     ctx.fillStyle = "#8b93a7";
     ctx.fillText("now " + last[2].toFixed(1) + " ms · min " + last[0].toFixed(1) + " · max " + last[1].toFixed(1)
-        + " · 30 s window", 6, 14);
+        + " · 30 s window · scale 0–" + top + " ms", 6, 14);
 }
 
 /* ---------- offset chart ---------- */

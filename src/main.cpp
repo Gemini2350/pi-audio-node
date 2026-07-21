@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -161,7 +162,18 @@ int main(int argc, char** argv)
     {
         json js;
         js["version"] = APP_VERSION;
-        js["build"] = __DATE__ " " __TIME__;    //ui reloads itself when this changes
+        //ui reloads itself when this changes; the newest webui file mtime is
+        //included so pure ui deploys reload the kiosk without a rebuild
+        uint64_t nUiStamp = 0;
+        for(const char* sFile : {"index.html", "app.js", "style.css"})
+        {
+            struct stat st{};
+            if(stat((sWebRoot + "/" + sFile).c_str(), &st) == 0)
+            {
+                nUiStamp = std::max(nUiStamp, static_cast<uint64_t>(st.st_mtime));
+            }
+        }
+        js["build"] = std::string(__DATE__ " " __TIME__ " ui-") + std::to_string(nUiStamp);
         js["ptp"] = ptpClient.GetStatusJson();
         js["sender"] = sender.GetStatusJson();
         js["receiver"] = receiver.GetStatusJson();

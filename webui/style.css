@@ -116,6 +116,7 @@ main { flex: 1; overflow-y: auto; padding: 12px; }
 .domain .msg { font-size: 12px; color: var(--dim); min-height: 1em; }
 
 /* ---- legs ---- */
+.legs { min-height: 82px; }     /* room for two legs - the cards below must not jump on connect */
 .legs .leg { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .legs .leg:last-child { border-bottom: 0; }
 .leg .ifname { font-weight: 700; min-width: 3.5em; }
