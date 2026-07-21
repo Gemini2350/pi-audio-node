@@ -195,6 +195,68 @@ int main(int argc, char** argv)
             auto vIps = sender.GetSourceIps();
             return {{"sdp", rtp::GenerateSdp(session, vIps.empty() ? "0.0.0.0" : vIps[0], vIps)}};
         }
+        else if(sAction == "nmos-senders")
+        {
+            //browse every audio sender the registry knows via the is-04 query api
+            auto sRegistry = node.GetStatusJson().value("registry", "");
+            if(sRegistry.empty()) { return {{"error", "not registered with a registry"}}; }
+
+            auto jsSenders = nmos::HttpJson("GET", sRegistry + "/x-nmos/query/v1.3/senders", nullptr, nStatus);
+            if(!jsSenders || !jsSenders->is_array())
+            {
+                return {{"error", "query api not reachable (status " + std::to_string(nStatus) + ")"}};
+            }
+            auto jsFlows = nmos::HttpJson("GET", sRegistry + "/x-nmos/query/v1.3/flows", nullptr, nStatus);
+            auto jsDevices = nmos::HttpJson("GET", sRegistry + "/x-nmos/query/v1.3/devices", nullptr, nStatus);
+
+            auto Find = [](const std::optional<json>& jsList, const std::string& sId) -> json
+            {
+                if(!jsList || !jsList->is_array() || sId.empty()) { return json::object(); }
+                for(const auto& js : *jsList)
+                {
+                    if(js.value("id", "") == sId) { return js; }
+                }
+                return json::object();
+            };
+            auto StringOr = [](const json& js, const char* sKey) -> std::string
+            {
+                return js.contains(sKey) && js[sKey].is_string() ? js[sKey].get<std::string>() : "";
+            };
+
+            json jsList = json::array();
+            for(const auto& jsSender : *jsSenders)
+            {
+                auto jsFlow = Find(jsFlows, StringOr(jsSender, "flow_id"));
+                auto sFormat = jsFlow.value("format", "");
+                if(!sFormat.empty() && sFormat != "urn:x-nmos:format:audio") { continue; }
+                jsList.push_back({
+                    {"id", jsSender.value("id", "")},
+                    {"label", jsSender.value("label", "")},
+                    {"device", Find(jsDevices, StringOr(jsSender, "device_id")).value("label", "")},
+                    {"media_type", jsFlow.value("media_type", "")},
+                    {"manifest_href", StringOr(jsSender, "manifest_href")},
+                    {"is_self", jsSender.value("id", "") == node.SenderId()}
+                });
+            }
+            return {{"senders", jsList}};
+        }
+        else if(sAction == "nmos-connect")
+        {
+            auto sSenderId = jsBody.value("sender_id", "");
+            auto sManifest = jsBody.value("manifest_href", "");
+            if(sManifest.rfind("http://", 0) != 0) { return {{"error", "sender has no usable manifest url"}}; }
+
+            auto sSdp = nmos::HttpText("GET", sManifest, nullptr, nStatus);
+            if(!sSdp || nStatus != 200 || sSdp->find("m=audio") == std::string::npos)
+            {
+                return {{"error", "could not fetch sdp from sender (status " + std::to_string(nStatus) + ")"}};
+            }
+            json jsPatch = {{"master_enable", true}, {"sender_id", sSenderId},
+                            {"activation", {{"mode", "activate_immediate"}}},
+                            {"transport_file", {{"type", "application/sdp"}, {"data", *sSdp}}}};
+            nmos::HttpJson("PATCH", sBase, &jsPatch, nStatus);
+            return {{"status", nStatus}};
+        }
         else if(sAction == "network-status")
         {
             json jsIfs = json::array();

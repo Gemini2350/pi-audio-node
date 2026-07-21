@@ -12,6 +12,7 @@ function showPage(name) {
     $("page-" + name).classList.add("active");
     history.replaceState(null, "", "#" + name);
     if (name === "settings") loadNetwork();
+    if (name === "receiver") loadSenders();
 }
 document.querySelectorAll(".tab").forEach(tab => { tab.onclick = () => showPage(tab.dataset.page); });
 if (location.hash.length > 1) showPage(location.hash.slice(1));
@@ -241,6 +242,45 @@ function drawChart(history) {
     ctx.font = "11px sans-serif";
     ctx.fillText("±" + fmtNs(max), 6, 14);
 }
+
+/* ---------- nmos sender browser ---------- */
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+async function loadSenders() {
+    $("rx-senders").textContent = "loading…";
+    let r;
+    try { r = await api("/api/action/nmos-senders", "POST", {}); }
+    catch (e) { $("rx-senders").textContent = "query failed"; return; }
+    if (r.error) { $("rx-senders").textContent = r.error; return; }
+
+    const senders = r.senders || [];
+    if (!senders.length) { $("rx-senders").textContent = "no audio senders in the registry"; return; }
+
+    const cur = (status.nmos || {}).connected_sender_id;
+    $("rx-senders").innerHTML = `<table class="kv">` + senders.map((s, n) => `
+        <tr><td>${esc(s.label) || "(unnamed)"}${s.is_self ? ' <span class="pill off">this device</span>' : ""}
+            <div class="sub">${esc(s.device)}${s.media_type ? " · " + esc(s.media_type) : ""}</div></td>
+        <td style="text-align:right">${s.id === cur
+            ? '<span class="pill ok">connected</span> <button class="btn" id="snd-off-' + n + '">Disconnect</button>'
+            : '<button class="btn" id="snd-on-' + n + '"' + (s.manifest_href ? "" : " disabled") + '>Connect</button>'}
+        </td></tr>`).join("") + `</table>`;
+
+    senders.forEach((s, n) => {
+        const on = $("snd-on-" + n), off = $("snd-off-" + n);
+        if (on) on.onclick = async () => {
+            on.textContent = "Connecting…";
+            const result = await api("/api/action/nmos-connect", "POST",
+                {sender_id: s.id, manifest_href: s.manifest_href}).catch(() => ({error: "request failed"}));
+            if (result.error) alert(result.error);
+            setTimeout(loadSenders, 800);
+        };
+        if (off) off.onclick = async () => {
+            await api("/api/action/receiver-disconnect", "POST", {}).catch(() => {});
+            setTimeout(loadSenders, 800);
+        };
+    });
+}
+$("rx-browse").onclick = loadSenders;
 
 /* ---------- receiver controls ---------- */
 $("rx-connect").onclick = () => {

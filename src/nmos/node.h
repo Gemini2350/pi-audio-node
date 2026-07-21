@@ -19,7 +19,9 @@ namespace pan::nmos
     class ConnectionApi;
     class Is12Server;
 
-    /** http request helper (civetweb client) - used by the registration client **/
+    /** http request helpers (civetweb client) - registration client, query api **/
+    std::optional<std::string> HttpText(const std::string& sMethod, const std::string& sUrl,
+                                        const std::string* pBody, int& nStatus);
     std::optional<nlohmann::json> HttpJson(const std::string& sMethod, const std::string& sUrl,
                                            const nlohmann::json* pBody, int& nStatus);
 

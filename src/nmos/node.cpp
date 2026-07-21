@@ -45,8 +45,8 @@ namespace
     }
 }
 
-std::optional<json> pan::nmos::HttpJson(const std::string& sMethod, const std::string& sUrl,
-                                        const json* pBody, int& nStatus)
+std::optional<std::string> pan::nmos::HttpText(const std::string& sMethod, const std::string& sUrl,
+                                               const std::string* pBody, int& nStatus)
 {
     nStatus = 0;
     auto parts = ParseUrl(sUrl);
@@ -56,7 +56,7 @@ std::optional<json> pan::nmos::HttpJson(const std::string& sMethod, const std::s
     mg_connection* pConn = mg_connect_client(parts->sHost.c_str(), parts->nPort, 0, sError, sizeof(sError));
     if(!pConn) { return std::nullopt; }
 
-    std::string sBody = pBody ? pBody->dump() : "";
+    std::string sBody = pBody ? *pBody : "";
     mg_printf(pConn, "%s %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n"
                      "Content-Type: application/json\r\nContent-Length: %zu\r\n\r\n",
               sMethod.c_str(), parts->sPath.c_str(), parts->sHost.c_str(), sBody.size());
@@ -79,9 +79,17 @@ std::optional<json> pan::nmos::HttpJson(const std::string& sMethod, const std::s
         sResponse.append(buffer, static_cast<size_t>(nRead));
     }
     mg_close_connection(pConn);
+    return sResponse;
+}
 
-    if(sResponse.empty()) { return json(); }
-    try { return json::parse(sResponse); }
+std::optional<json> pan::nmos::HttpJson(const std::string& sMethod, const std::string& sUrl,
+                                        const json* pBody, int& nStatus)
+{
+    std::string sBody = pBody ? pBody->dump() : "";
+    auto sResponse = HttpText(sMethod, sUrl, pBody ? &sBody : nullptr, nStatus);
+    if(!sResponse) { return std::nullopt; }
+    if(sResponse->empty()) { return json(); }
+    try { return json::parse(*sResponse); }
     catch(...) { return json(); }
 }
 
@@ -507,11 +515,14 @@ void NmosNode::RegisterNodeApi()
 
 json NmosNode::GetStatusJson() const
 {
+    json jsConnected;
+    if(m_pConnection) { jsConnected = m_pConnection->ReceiverSenderId(); }
     std::lock_guard<std::mutex> lg(m_mutex);
     return {
         {"node_id", m_sNodeId},
         {"receiver_id", m_sReceiverId},
         {"sender_id", m_sSenderId},
+        {"connected_sender_id", jsConnected},
         {"registry", m_sRegistry},
         {"status", m_sRegistryStatus},
         {"port", m_nPort}
