@@ -325,11 +325,13 @@ let lastCurSender = null;
 const sndOpen = new Set();      //expanded device groups, kept across refreshes
 
 async function loadSenders() {
-    $("rx-senders").textContent = "loading…";
+    /* refresh silently once a list is shown - collapsing to "loading…"
+       makes the whole page jump */
+    if (!sendersCache.length) $("rx-senders").textContent = "loading…";
     let r;
     try { r = await api("/api/action/nmos-senders", "POST", {}); }
-    catch (e) { $("rx-senders").textContent = "query failed"; return; }
-    if (r.error) { $("rx-senders").textContent = r.error; return; }
+    catch (e) { if (!sendersCache.length) $("rx-senders").textContent = "query failed"; return; }
+    if (r.error) { if (!sendersCache.length) $("rx-senders").textContent = r.error; return; }
     sendersCache = r.senders || [];
 
     /* the group with the active connection starts expanded */
