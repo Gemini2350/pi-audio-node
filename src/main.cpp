@@ -200,7 +200,8 @@ int main(int argc, char** argv)
         }
         else if(sAction == "receiver-disconnect")
         {
-            json jsPatch = {{"master_enable", false}, {"activation", {{"mode", "activate_immediate"}}}};
+            json jsPatch = {{"master_enable", false}, {"sender_id", nullptr},
+                            {"activation", {{"mode", "activate_immediate"}}}};
             nmos::HttpJson("PATCH", sBase, &jsPatch, nStatus);
         }
         else if(sAction == "sender-sdp")

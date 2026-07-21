@@ -75,6 +75,9 @@ ConnectionApi::ConnectionApi(NmosNode& node, ReceiverCallback onReceiver, Sender
 json ConnectionApi::ReceiverSenderId() const
 {
     std::lock_guard<std::mutex> lg(m_mutex);
+    //without master_enable there is no subscription - a deactivation that
+    //leaves sender_id staged must not report as connected
+    if(!m_jsReceiverActive.value("master_enable", false)) { return json(); }
     return m_jsReceiverActive.value("sender_id", json());
 }
 
