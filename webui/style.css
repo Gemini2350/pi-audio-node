@@ -90,6 +90,7 @@ main { flex: 1; overflow-y: auto; padding: 12px; }
 .sndhead .arrow { color: var(--dim); width: 1em; }
 .sndhead .sub { margin-top: 0; }
 .sndgrp .kv { margin-bottom: 6px; }
+.snd-inactive td:first-child { opacity: .55; }
 
 /* ---- interface setup ---- */
 .netif { padding: 10px 0; border-bottom: 1px solid var(--line); }

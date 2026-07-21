@@ -137,6 +137,14 @@ function render() {
     drawBufferChart(rx.buffer_history || [], rx.critical_ms || 2, rx.running && rx.receiving);
     renderMatrix(rx);
 
+    /* the connected badge in the sender list follows is-05/registry state
+       live, e.g. when an external controller patches this receiver */
+    const curSender = (status.nmos || {}).connected_sender_id;
+    if (curSender !== lastCurSender) {
+        lastCurSender = curSender;
+        if (sendersCache.length) renderSenders();
+    }
+
     $("rx-stats").innerHTML =
         `<tr><td>Played</td><td>${rx.played || 0}</td></tr>
          <tr><td>Concealed (loss)</td><td>${rx.concealed || 0}</td></tr>
@@ -313,6 +321,7 @@ function drawChart(history) {
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 
 let sendersCache = [];
+let lastCurSender = null;
 const sndOpen = new Set();      //expanded device groups, kept across refreshes
 
 async function loadSenders() {
@@ -353,7 +362,9 @@ function renderSenders() {
             </div>` +
             (open ? `<table class="kv">` + items.map(i => {
                 const s = sendersCache[i];
-                return `<tr><td>${esc(s.label) || "(unnamed)"}${s.is_self ? ' <span class="pill off">this device</span>' : ""}
+                return `<tr${s.active === false ? ' class="snd-inactive"' : ""}>
+                <td>${esc(s.label) || "(unnamed)"}${s.is_self ? ' <span class="pill off">this device</span>' : ""}
+                    ${s.active === false ? ' <span class="pill off">inactive</span>' : ""}
                     ${s.media_type ? `<span class="sub"> · ${esc(s.media_type)}</span>` : ""}</td>
                 <td style="text-align:right">${s.id === cur
                     ? '<span class="pill ok">connected</span> <button class="btn" data-off="' + i + '">Disconnect</button>'
@@ -388,6 +399,10 @@ function renderSenders() {
 }
 $("rx-browse").onclick = loadSenders;
 $("rx-filter").oninput = renderSenders;
+/* keep the registry view current while the page is open */
+setInterval(() => {
+    if ($("page-receiver").classList.contains("active")) loadSenders();
+}, 30000);
 
 /* ---------- receiver controls ---------- */
 $("rx-connect").onclick = () => {

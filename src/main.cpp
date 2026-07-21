@@ -275,12 +275,18 @@ int main(int argc, char** argv)
                 auto jsFlow = Find(jsFlows, StringOr(jsSender, "flow_id"));
                 auto sFormat = jsFlow.value("format", "");
                 if(!sFormat.empty() && sFormat != "urn:x-nmos:format:audio") { continue; }
+                bool bActive = true;    //the registry's view: is this sender streaming
+                if(jsSender.contains("subscription") && jsSender["subscription"].is_object())
+                {
+                    bActive = jsSender["subscription"].value("active", true);
+                }
                 jsList.push_back({
                     {"id", jsSender.value("id", "")},
                     {"label", jsSender.value("label", "")},
                     {"device", Find(jsDevices, StringOr(jsSender, "device_id")).value("label", "")},
                     {"media_type", jsFlow.value("media_type", "")},
                     {"manifest_href", StringOr(jsSender, "manifest_href")},
+                    {"active", bActive},
                     {"is_self", jsSender.value("id", "") == node.SenderId()}
                 });
             }
